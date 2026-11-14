@@ -78,3 +78,6 @@ websockets==17.4
 wheel==0.48.0
 wrapt==2.5.2
 yarl==1.25.1
+python-dotenv==1.0.1
+yfinance==1.8.0
+edgar-geo-revenue==0.1.2

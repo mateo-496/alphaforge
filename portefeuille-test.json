@@ -1,0 +1,12 @@
+{
+  "holdings": [
+    {
+      "ticker": "ASML",
+      "weight": 0.6
+    },
+    {
+      "ticker": "NVDA",
+      "weight": 0.4
+    }
+  ]
+}
