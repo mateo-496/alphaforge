@@ -106,3 +106,41 @@ class AssetReport(BaseModel):
     market: MarketStats
     claims: list[Claim]
     events: list[Event]
+
+# ---------- Request inputs (web form -> orchestrator) ----------
+RiskTolerance = Literal["low", "low_moderate", "moderate", "high"]
+
+
+class Holding(BaseModel):
+    ticker: str = Field(description="Ticker from the 31-asset starter universe, e.g. 'NVDA', 'RY.TO'")
+    weight: float = Field(ge=0, le=1, description="Portfolio weight, holdings sum to 1")
+
+
+class Portfolio(BaseModel):
+    holdings: list[Holding]
+    base_currency: Literal["CAD", "USD"] = "CAD"
+
+
+class InvestorProfile(BaseModel):
+    persona: Optional[str] = Field(None, description="'amira' | 'mateo' | 'robert' | None for custom")
+    age: Optional[int] = Field(None, ge=18, le=100)
+    horizon_years: int = Field(10, ge=1, le=40)
+    risk_tolerance: RiskTolerance = "moderate"
+    objective: Literal["preserve", "balanced", "growth"] = "balanced"
+    experience: Literal["beginner", "intermediate", "advanced"] = "intermediate"
+    esg_importance: Literal["none", "some", "high"] = "none"
+    avoid_controversies: bool = False
+    crypto_max: float = Field(0.0, ge=0, le=1, description="Max total weight in crypto assets")
+    max_single_weight: float = Field(0.25, gt=0, le=1, description="Max weight of any single holding")
+    excluded_sectors: list[str] = Field(default_factory=list)
+    excluded_tickers: list[str] = Field(default_factory=list)
+    avoid_countries: list[str] = Field(default_factory=list, description="ISO 3166-1 alpha-3 codes")
+    interests: list[str] = Field(default_factory=list)
+    notes: str = ""
+
+
+class AnalysisRequest(BaseModel):
+    portfolio: Portfolio
+    profile: InvestorProfile
+    as_of: str = Field(description="YYYY-MM-DD; agents only use data published on or before this date")
+

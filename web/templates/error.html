@@ -1,0 +1,9 @@
+{% extends "base.html" %}
+{% block content %}
+<p class="back"><a href="javascript:history.back()">← Edit inputs</a></p>
+<section class="intro">
+  <h1>The analysis could not start</h1>
+  <ul class="notice">{% for e in errors %}<li>{{ e }}</li>{% endfor %}</ul>
+  {% if notes %}<ul class="notes">{% for n in notes %}<li>{{ n }}</li>{% endfor %}</ul>{% endif %}
+</section>
+{% endblock %}
