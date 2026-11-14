@@ -1,0 +1,26 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{% block title %}AlphaForge{% endblock %}</title>
+  <link rel="stylesheet" href="/static/style.css">
+  <script src="/static/htmx.min.js" defer></script>
+</head>
+<body>
+  <header class="masthead">
+    <div class="wrap masthead-row">
+      <a class="wordmark" href="/">AlphaForge</a>
+      <span class="masthead-note">Geopolitical risk review · PolyFinances Datathon 2026</span>
+    </div>
+  </header>
+  <main class="wrap">
+    {% block content %}{% endblock %}
+  </main>
+  <footer class="wrap footer">
+    Simulation for educational use. Nothing on this page is investment advice.
+    Data: AlphaForge starter dataset, {{ window[0] }} to {{ window[1] }}.
+  </footer>
+  <script src="/static/app.js" defer></script>
+</body>
+</html>

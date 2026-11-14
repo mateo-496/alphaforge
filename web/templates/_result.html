@@ -1,0 +1,98 @@
+<div class="result">
+  <section class="headline">
+    <div class="score">
+      <span class="score-num mono">{{ "%.0f"|format(r.score) }}</span><span class="score-of">/100</span>
+      <span class="score-level level-{{ r.level }}">{{ r.level|capitalize }}</span>
+    </div>
+    <div class="summary">
+      {% for s in r.summary %}<p>{{ s }}</p>{% endfor %}
+      {% if r.mock %}<p class="mock-note">Company exposures and country risk are placeholders until those agents are connected.</p>{% endif %}
+    </div>
+  </section>
+
+  {% if r.checks %}
+  <section class="block coll">
+    <div class="block-head"><span class="block-no">01</span><h2><button type="button" class="block-toggle" aria-expanded="true">Conflicts with the profile<i class="chev"></i></button></h2>
+      <p>Stated limits the portfolio already breaks, before any geopolitical shock.</p></div>
+    <div class="block-body">
+      <ol class="checks-list">{% for c in r.checks %}<li>{{ c.text }}</li>{% endfor %}</ol>
+    </div>
+  </section>
+  {% endif %}
+
+  <section class="block coll">
+    <div class="block-head"><span class="block-no">02</span><h2><button type="button" class="block-toggle" aria-expanded="true">Where the risk comes from<i class="chev"></i></button></h2>
+      <p>Each holding's risk combines the political risk of the countries it earns revenue in and its own filing disclosures. The tick marks its weight.</p></div>
+    <div class="block-body">
+      <table class="data">
+        <thead><tr><th>Ticker</th><th>Name</th><th class="num">Weight</th><th class="num">Risk</th><th class="share-col">Share of portfolio risk</th></tr></thead>
+        <tbody>
+          {% set maxc = r.by_holding[0].contribution %}
+          {% for h in r.by_holding %}
+          <tr class="{% if h.contribution > h.weight * 1.2 %}flag{% endif %}{% if loop.index > 5 %} more{% endif %}">
+            <td class="mono">{{ h.ticker }}</td><td>{{ h.name }}</td>
+            <td class="num mono">{{ "%.1f"|format(h.weight * 100) }}%</td>
+            <td class="num mono">{{ "%.0f"|format(h.G) }}</td>
+            <td class="share-col"><span class="share"><span class="bar" style="width: {{ (h.contribution / maxc * 100)|round(1) }}%"></span><i class="tick" style="left: {{ (h.weight / maxc * 100)|round(1) if h.weight < maxc else 100 }}%"></i></span><span class="mono share-num">{{ "%.0f"|format(h.contribution * 100) }}%</span></td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+      {% if r.by_holding|length > 5 %}<button type="button" class="show-more" data-more>Show all {{ r.by_holding|length }} holdings<i class="chev"></i></button>{% endif %}
+    </div>
+  </section>
+
+  <section class="block coll">
+    <div class="block-head"><span class="block-no">03</span><h2><button type="button" class="block-toggle" aria-expanded="true">Countries<i class="chev"></i></button></h2>
+      <p>Share of portfolio revenue earned in each country, and that country's political risk on the analysis date.</p></div>
+    <div class="block-body">
+      <table class="data">
+        <thead><tr><th>Country</th><th class="num">Exposure</th><th class="num">Risk</th><th>Main driver</th><th>Through</th></tr></thead>
+        <tbody>
+          {% for c in r.by_country %}
+          <tr{% if loop.index > 5 %} class="more"{% endif %}><td>{{ c.name }}</td><td class="num mono">{{ "%.1f"|format(c.X * 100) }}%</td>
+            <td class="num mono{% if c.R >= 60 %} hot{% endif %}">{{ c.R }}</td>
+            <td class="muted">{{ c.driver }}</td><td class="mono small">{{ c.holdings|join(", ") }}</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+      {% if r.by_country|length > 5 %}<button type="button" class="show-more" data-more>Show all {{ r.by_country|length }} countries<i class="chev"></i></button>{% endif %}
+    </div>
+  </section>
+
+  <section class="block coll">
+    <div class="block-head"><span class="block-no">04</span><h2><button type="button" class="block-toggle" aria-expanded="true">Five events to watch<i class="chev"></i></button></h2>
+      <p>Upcoming dated events ranked by exposure × severity × likelihood, discounted by how far away they are.</p></div>
+    <div class="block-body">
+      <ol class="watch">
+        {% for e in r.watchlist %}
+        <li>
+          <span class="watch-date mono">{{ e.date }}</span>
+          <span class="watch-title">{{ e.title }}</span>
+          <span class="watch-meta">{{ e.channel|replace("_", " ") }} · severity {{ e.severity }}/5 · likelihood {{ "%.0f"|format(e.likelihood * 100) }}% · <span class="mono">{{ e.holdings|join(", ") }}</span></span>
+        </li>
+        {% endfor %}
+      </ol>
+    </div>
+  </section>
+
+  {% include "_scenarios.html" %}
+
+  {% if r.whatifs %}
+  <section class="block coll collapsed">
+    <div class="block-head"><span class="block-no">06</span><h2><button type="button" class="block-toggle" aria-expanded="false">What if<i class="chev"></i></button></h2>
+      <p>Hypothetical changes and their effect on the score. A simulation, not a recommendation.</p></div>
+    <div class="block-body">
+      <ul class="whatifs">
+        {% for w in r.whatifs %}
+        <li>Moving half of <b class="mono">{{ w.from }}</b> ({{ "%.1f"|format(w.move * 100) }}% of the portfolio) into <b class="mono">{{ w.to }}</b>
+          would change the score from {{ "%.0f"|format(r.score) }} to <b>{{ "%.0f"|format(w.score_after) }}</b>.
+          {% if w.ret_from is not none and w.ret_to is not none %}Over the year to {{ r.as_of }}, {{ w.from }} returned {{ "%+.0f"|format(w.ret_from * 100) }}% and {{ w.to }} {{ "%+.0f"|format(w.ret_to * 100) }}%.{% endif %}</li>
+        {% endfor %}
+      </ul>
+    </div>
+  </section>
+  {% endif %}
+
+  {% include "_annexes.html" %}
+</div>
