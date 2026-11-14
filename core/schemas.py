@@ -58,3 +58,51 @@ class DraftClaim(BaseModel):
 class DraftOutput(BaseModel):
     claims: list[DraftClaim]
     summary: str = Field(description="Cite claims by position as [1], [2]... (1-based, order of `claims`)")
+
+
+# ---------- Country / Asset layers (all use the claim envelope) ----------
+class Event(BaseModel):
+    """Dated, sourced event. Feeds the top-5 watchlist, so a summary is never enough."""
+    id: str = Field(description="'ev:<CN or ticker>:<nn>', assigned by code")
+    type: str = Field(description="e.g. tariff_deadline, license_renewal, litigation")
+    date: str = Field(description="YYYY-MM-DD")
+    channel: Channel
+    severity: int = Field(ge=0, le=5)
+    likelihood: float = Field(ge=0, le=1)
+    sources: list[Source] = Field(default_factory=list)
+    country: Optional[str] = Field(None, description="Set for country events")
+    ticker: Optional[str] = Field(None, description="Set for firm-specific events")
+
+
+class Indicators(BaseModel):
+    gpr: Optional[float] = None
+    gpr_z: Optional[float] = None
+    epu: Optional[float] = None
+    vol_index: Optional[float] = None
+    stress: Optional[float] = None
+
+
+class CountryReport(BaseModel):
+    country: str
+    as_of: str
+    indicators: Indicators
+    claims: list[Claim]
+    events: list[Event]
+    R_c: float = Field(0.0, description="Computed in code (tools.risk_math.country_risk), never by the LLM")
+
+
+class MarketStats(BaseModel):
+    beta_m: Optional[float] = None
+    beta_gpr: Optional[float] = None
+    vol_1y: Optional[float] = None
+    ret_1y: Optional[float] = None
+
+
+class AssetReport(BaseModel):
+    ticker: str
+    filing: str = Field(description="e.g. '10-K FY2025'; annual report for non-SEC filers")
+    country_weights: dict[str, float] = Field(description="Blended revenue/production weights, sum to 1, incl. 'Other'")
+    weights_estimated: bool = Field(description="True if any region was split into countries by proxy")
+    market: MarketStats
+    claims: list[Claim]
+    events: list[Event]
