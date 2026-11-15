@@ -8,6 +8,7 @@ import math
 from datetime import date, timedelta
 
 from tools import risk_math
+from tools.portfolio_score import calculate_portfolio_risk
 from web import mock, universe as U
 from web.store import cache, runs
 
@@ -157,18 +158,25 @@ async def run(run_id: str) -> None:
         ev(kind="phase", phase="scenarios", status="done", label="Scenarios",
            detail=" · ".join(f"{g['label']}: {len(g['scenarios'])} ({g['week']})" for g in sets))
 
-        # 4. Risk (deterministic, tools/risk_math)
+        # 4. Risk (deterministic 2-stage formula, tools/portfolio_score)
         ev(kind="phase", phase="risk", status="start", label="Portfolio risk")
         await asyncio.sleep(DELAY["step"])
         R = {c: r["R"] for c, r in countries.items()}
         G = {t: _asset_risk(assets[t], R) for t in weights}
-        score = risk_math.portfolio_risk(weights, G)
+        risk_calc = calculate_portfolio_risk(
+            weights=weights,
+            profile=req.get("profile"),
+            assets=assets,
+            countries=countries,
+            scenarios=sets,
+        )
+        score = risk_calc["score"]
         ev(kind="phase", phase="risk", status="done", detail=f"{score:.0f}/100")
 
         # 5. Report: drivers, watchlist, what-ifs, scenarios
         ev(kind="phase", phase="report", status="start", label="Report")
         await asyncio.sleep(DELAY["step"])
-        result = build_report(req, weights, assets, countries, X, G, score, sets)
+        result = build_report(req, weights, assets, countries, X, G, score, sets, risk_calc=risk_calc)
         ev(kind="phase", phase="report", status="done")
         runs.set(run_id, status="done", result=result)
         ev(kind="run", status="done")
@@ -177,8 +185,18 @@ async def run(run_id: str) -> None:
         ev(kind="run", status="error", detail=str(e))
 
 
-def build_report(req, weights, assets, countries, X, G, score, sets) -> dict:
+def build_report(req, weights, assets, countries, X, G, score, sets, risk_calc: dict | None = None) -> dict:
     uni, as_of, prof = U.universe(), req["as_of"], req["profile"]
+    if risk_calc is None:
+        risk_calc = calculate_portfolio_risk(
+            weights=weights,
+            profile=prof,
+            assets=assets,
+            countries=countries,
+            scenarios=sets,
+        )
+        score = risk_calc["score"]
+
     by_holding = sorted(({"ticker": t, "name": uni[t]["name"], "weight": w, "G": round(G[t], 1),
                           "contribution": w * G[t] / score if score else 0,
                           "method": assets[t]["method"]} for t, w in weights.items()),
@@ -217,14 +235,33 @@ def build_report(req, weights, assets, countries, X, G, score, sets) -> dict:
         if not alt:
             continue
         move = weights[t] / 2
-        new = score - move * G[t] + move * alt_G[alt]
+        # Deterministically re-score the simulated rebalanced portfolio
+        sim_weights = dict(weights)
+        sim_weights[t] = sim_weights[t] - move
+        sim_weights[alt] = sim_weights.get(alt, 0.0) + move
+        sim_assets = dict(assets)
+        if alt not in sim_assets:
+            sim_assets[alt] = _mock_asset_report(alt, as_of)
+        sim_calc = calculate_portfolio_risk(
+            weights=sim_weights,
+            profile=prof,
+            assets=sim_assets,
+            countries=countries,
+            scenarios=sets,
+        )
+        new = sim_calc["score"]
         r_t, r_a = _ret_1y(t, as_of), _ret_1y(alt, as_of)
         whatifs.append({"from": t, "to": alt, "move": move, "score_after": new, "delta": new - score,
                         "ret_from": r_t, "ret_to": r_a})
 
     top = by_holding[0]
     foreign = [c for c in by_country if c["iso3"] not in ("CAN", "USA")]
-    summary = [f"The portfolio's geopolitical risk score is {score:.0f} out of 100, which we classify as {_level(score)}."]
+    obj_score = risk_calc.get("objective", score)
+    conf_pct = risk_calc.get("confidence", 1.0) * 100.0
+    summary = [
+        f"The portfolio's risk score is {score:.0f} out of 100, which we classify as {_level(score)} "
+        f"(objective portfolio risk: {obj_score:.0f}/100, confidence: {conf_pct:.0f}%)."
+    ]
     if top["contribution"] > top["weight"] * 1.2:
         summary.append(f"{top['ticker']} is {top['weight']:.0%} of the portfolio but {top['contribution']:.0%} of the risk.")
     if foreign:
@@ -241,7 +278,11 @@ def build_report(req, weights, assets, countries, X, G, score, sets) -> dict:
             summary.append(f"{', '.join(held)} should be checked against the controversy exclusion; "
                            "filings alone do not settle it.")
 
-    return {"as_of": as_of, "score": round(score, 1), "level": _level(score), "summary": summary,
+    return {"as_of": as_of, "score": round(score, 1), "objective_score": round(obj_score, 1),
+            "personalized_score": round(risk_calc.get("personalized", score), 1),
+            "confidence": round(risk_calc.get("confidence", 1.0), 2),
+            "risk_components": risk_calc.get("components", {}),
+            "level": _level(score), "summary": summary,
             "by_holding": by_holding, "by_country": by_country, "watchlist": watch, "whatifs": whatifs,
             "checks": req.get("checks", []), "scenarios": scenario_impacts(sets, weights, assets),
             "scenario_sets": [{k: v for k, v in g.items() if k != "scenarios"} for g in sets],

@@ -3,6 +3,11 @@
     <div class="score">
       <span class="score-num mono">{{ "%.0f"|format(r.score) }}</span><span class="score-of">/100</span>
       <span class="score-level level-{{ r.level }}">{{ r.level|capitalize }}</span>
+      {% if r.objective_score is defined %}
+      <div class="score-sub small muted" style="margin-top: 6px; font-size: 13px; color: var(--muted, #666); flex-basis: 100%;">
+        Objective Risk: {{ "%.0f"|format(r.objective_score) }}/100 &middot; Confidence: {{ "%.0f"|format(r.confidence * 100) }}%
+      </div>
+      {% endif %}
     </div>
     <div class="summary">
       {% for s in r.summary %}<p>{{ s }}</p>{% endfor %}
