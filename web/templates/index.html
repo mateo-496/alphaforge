@@ -61,9 +61,15 @@
         {% for key, p in personas.items() %}<button type="button" class="link" hx-get="/portfolio/example/{{ key }}"
                 hx-target="#holdings" hx-swap="outerHTML">{{ p.label }}</button>{% if not loop.last %} · {% endif %}{% endfor %}
         </span>
+        <span class="ex-label">Showcase portfolios</span>
+        <span class="ex-list">
+        {% for key, p in samples.items() if p.group == "showcase" %}<button type="button" class="link" data-sample="{{ key }}" title="{{ p.persona }}"
+          hx-get="/portfolio/example/{{ key }}" hx-target="#holdings" hx-swap="outerHTML">{{ p.label }}</button>{% if not loop.last %} · {% endif %}{% endfor %}
+        <span class="muted">Tested with the selected investor profiles; results can change with the data.</span>
+        </span>
         <span class="ex-label">Sample portfolios</span>
         <span class="ex-list">
-        {% for key, p in samples.items() %}<button type="button" class="link" data-sample="{{ key }}" title="{{ p.persona }}"
+        {% for key, p in samples.items() if p.group == "sample" %}<button type="button" class="link" data-sample="{{ key }}" title="{{ p.persona }}"
                 hx-get="/portfolio/example/{{ key }}" hx-target="#holdings" hx-swap="outerHTML">{{ p.label }}</button>{% if not loop.last %} · {% endif %}{% endfor %}
         </span>
       </div>

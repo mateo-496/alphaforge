@@ -132,9 +132,9 @@ def test_models_that_reject_forced_tool_choice_fall_back_to_auto(fake, monkeypat
                                          "Message": 'tool_choice: type "tool" and "any" are not supported'}}, "Converse")
         return real(**req)
     bed.converse = converse
-    assert llm.ask("unit", "sys", "p", Out).answer == "ok"            # text-only reply -> nudged -> answer
+    assert llm.ask("unit", "sys", "p", Out, cache=False).answer == "ok"   # text-only reply -> nudged -> answer
     assert bed.requests[1]["messages"][-1]["content"][0]["text"].startswith("Call the `answer` tool")
-    assert llm.ask("unit", "sys", "p", Out).answer == "again"         # remembered: auto straight away
+    assert llm.ask("unit", "sys", "p", Out, cache=False).answer == "again"   # remembered: auto straight away
     assert all(r["toolConfig"]["toolChoice"] == {"auto": {}} for r in bed.requests)
     assert "answer` tool" in bed.requests[0]["system"][0]["text"]
 
@@ -165,3 +165,34 @@ def test_expired_credentials_fail_fast_with_a_clear_message(monkeypatch):
         with pytest.raises(llm.AWSCredentialsError, match="AWS_SESSION_TOKEN"):
             llm.ask("unit", "sys", "p", Out)
     assert len(calls) == 1
+
+
+def test_same_input_is_answered_from_the_saved_answer(fake):
+    """Second identical ask: no Bedrock call, same answer, traced as cached (token 0)."""
+    bed, _ = fake([use("answer", {"answer": "ok", "n": 1})])
+    first = llm.ask("unit", "sys", "same", Out)
+    assert llm.ask("unit", "sys", "same", Out) == first
+    assert len(bed.requests) == 1
+    t = traces()
+    assert [x["cached"] for x in t] == [False, True] and t[1]["token_in"] == 0
+
+
+def test_any_change_in_the_input_asks_again(fake, monkeypatch):
+    """Prompt, system prompt and model are all part of the key; LLM_CACHE=0 and cache=False always ask."""
+    bed, _ = fake([use("answer", {"answer": str(i), "n": i}, f"t{i}") for i in range(6)])
+    llm.ask("unit", "sys", "p", Out)
+    llm.ask("unit", "sys", "p2", Out)
+    llm.ask("unit", "sys2", "p", Out)
+    llm.ask("unit", "sys", "p", Out, model_id="other-model")
+    llm.ask("unit", "sys", "p", Out, cache=False)
+    monkeypatch.setattr(config, "LLM_CACHE", False)
+    llm.ask("unit", "sys", "p", Out)
+    assert len(bed.requests) == 6
+
+
+def test_failed_answers_are_not_saved(fake):
+    """No valid answer after 3 attempts raises and saves nothing: the next run asks again."""
+    bed, _ = fake([use("answer", {"answer": "x"}, f"t{i}") for i in range(3)] + [use("answer", {"answer": "ok", "n": 1})])
+    with pytest.raises(ValueError):
+        llm.ask("unit", "sys", "p", Out)
+    assert llm.ask("unit", "sys", "p", Out).answer == "ok" and len(bed.requests) == 4

@@ -1,5 +1,6 @@
 """Run state, one per user request: status, append-only event log, final result -> data/runs/<id>/run.json.
 Shared data (prices, filings, GPR, scenarios) lives in core.storage, local or S3."""
+import hashlib
 import json
 import logging
 import re
@@ -8,9 +9,21 @@ import time
 import uuid
 from pathlib import Path
 
-ROOT = Path("data")
+from core import config
+
+ROOT = config.DATA_DIR
 _SAVE_RETRIES = 8          # ~0.7 s total backoff before giving up on one write
 log = logging.getLogger(__name__)
+
+
+def analysis_key(request: dict) -> str:
+    """Identity of an analysis: holdings (order-free), profile, analysis date, scenario country."""
+    pf = request["portfolio"]
+    ident = {"holdings": sorted((h["ticker"], round(h["weight"], 6)) for h in pf["holdings"]),
+             "base_currency": pf.get("base_currency"), "profile": request["profile"], "as_of": request["as_of"],
+             "scenario_country": request.get("scenario_country")}
+    raw = json.dumps(ident, sort_keys=True, separators=(",", ":"), default=str)
+    return hashlib.sha256(raw.encode()).hexdigest()[:32]
 
 
 class LocalRunStore:
@@ -41,6 +54,23 @@ class LocalRunStore:
             event.update(seq=len(run["events"]) + 1, t=round(time.time() - run["created"], 2))
             run["events"].append(event)
             self._save(run_id)
+
+    def remember(self, key: str, run_id: str) -> None:
+        """Point an analysis key at the run that answers it (data/runs/index/<key>.json)."""
+        try:
+            d = self.root / "index"
+            d.mkdir(parents=True, exist_ok=True)
+            (d / f"{key}.json").write_text(json.dumps({"run_id": run_id, "at": time.time()}))
+        except OSError as e:
+            log.warning("run index not written (%s)", e)
+
+    def lookup(self, key: str) -> str | None:
+        """The run last remembered for this analysis key, if any."""
+        p = self.root / "index" / f"{key}.json"
+        try:
+            return json.loads(p.read_text())["run_id"] if re.fullmatch(r"[0-9a-f]{32}", key) and p.exists() else None
+        except (OSError, ValueError, KeyError):
+            return None
 
     def events_after(self, run_id: str, seq: int) -> list[dict]:
         return self.get(run_id)["events"][seq:]

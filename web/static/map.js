@@ -1,12 +1,12 @@
 // Scenario map: D3 world map, countries coloured by the intensity of the selected scenarios.
-window.initScenarioMap = async function (runId) {
+window.initScenarioMap = async function (runId, preloaded) {
   const svgEl = document.getElementById("map");
   if (!svgEl || svgEl.dataset.ready) return;
   svgEl.dataset.ready = "1";
 
 
   const [data, world] = await Promise.all([
-    fetch(`/runs/${runId}/scenarios.json`).then(r => r.json()),
+    preloaded ? Promise.resolve(preloaded) : fetch(`/runs/${runId}/scenarios.json`).then(r => r.json()),
     fetch("/static/vendor/countries-110m.json").then(r => r.json()),
   ]);
   // ISO 3166 alpha-3 <-> numeric (world-atlas ids), full table from the server.

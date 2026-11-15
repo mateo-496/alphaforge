@@ -1,0 +1,2651 @@
+{
+ "_doc": "Sample portfolios, North American investor POV. Countries ISO3. 'country' = domicile/home market; 'ops' = main operating countries when different; ETFs: 'primary_countries' is a qualitative look-through hint (use issuer holdings files for weights). Tickers are US/TSX/OTC listings checked as of mid-2026; verify at as_of. 'portfolios' = 15 risk-method test portfolios, 10+ holdings each (5 safe, 5 medium, 5 dangerous; 'expected_score' = objective score from the formula on cached inputs, 2026-11-15). 'showcase_portfolios' = Luc's exaggerated set; 'legacy_portfolios' = the original samples.",
+ "portfolios": [
+  {
+   "id": "s1-cad-bonds",
+   "label": "Maple Bunker",
+   "profile": {
+    "persona": "Risk-method test portfolio (safe band)",
+    "base_currency": "CAD",
+    "risk_tolerance": "moderate",
+    "horizon_years": 10,
+    "objective": "balanced",
+    "max_single_holding": 0.25
+   },
+   "holdings": [
+    {"ticker": "ZST.TO", "weight": 0.25},
+    {"ticker": "XBB.TO", "weight": 0.25},
+    {"ticker": "FTS.TO", "weight": 0.07},
+    {"ticker": "RY.TO", "weight": 0.07},
+    {"ticker": "TD.TO", "weight": 0.06},
+    {"ticker": "MFC.TO", "weight": 0.06},
+    {"ticker": "ATD.TO", "weight": 0.06},
+    {"ticker": "CNR.TO", "weight": 0.06},
+    {"ticker": "CSU.TO", "weight": 0.06},
+    {"ticker": "ENB.TO", "weight": 0.06}
+   ],
+   "geo_angle": "Half Canadian government/IG bonds, half Canadian blue chips (banks, utility, rail, retail, software): one stable G7 country, mostly domestic revenue.",
+   "band": "safe",
+   "expected_score": 31.9,
+   "estimated_splits": [
+    "ATD.TO",
+    "CSU.TO",
+    "XBB.TO"
+   ]
+  },
+  {
+   "id": "s2-cad-income",
+   "label": "Home Dividend",
+   "profile": {
+    "persona": "Risk-method test portfolio (safe band)",
+    "base_currency": "CAD",
+    "risk_tolerance": "moderate",
+    "horizon_years": 10,
+    "objective": "balanced",
+    "max_single_holding": 0.25
+   },
+   "holdings": [
+    {"ticker": "XBB.TO", "weight": 0.2},
+    {"ticker": "ZST.TO", "weight": 0.1},
+    {"ticker": "FTS.TO", "weight": 0.1},
+    {"ticker": "RY.TO", "weight": 0.1},
+    {"ticker": "TD.TO", "weight": 0.1},
+    {"ticker": "MFC.TO", "weight": 0.1},
+    {"ticker": "ENB.TO", "weight": 0.08},
+    {"ticker": "CNR.TO", "weight": 0.08},
+    {"ticker": "ATD.TO", "weight": 0.07},
+    {"ticker": "XIU.TO", "weight": 0.07}
+   ],
+   "geo_angle": "Canadian bonds plus dividend payers (utility, banks, insurer, pipeline, rail) and the TSX 60: home-country risk only.",
+   "band": "safe",
+   "expected_score": 33.6,
+   "estimated_splits": [
+    "ATD.TO",
+    "XBB.TO"
+   ]
+  },
+  {
+   "id": "s3-chile-canada",
+   "label": "Andes & Maple",
+   "profile": {
+    "persona": "Risk-method test portfolio (safe band)",
+    "base_currency": "CAD",
+    "risk_tolerance": "moderate",
+    "horizon_years": 10,
+    "objective": "balanced",
+    "max_single_holding": 0.25
+   },
+   "holdings": [
+    {"ticker": "XBB.TO", "weight": 0.2},
+    {"ticker": "ZST.TO", "weight": 0.1},
+    {"ticker": "BCH", "weight": 0.12},
+    {"ticker": "FTS.TO", "weight": 0.1},
+    {"ticker": "RY.TO", "weight": 0.1},
+    {"ticker": "MFC.TO", "weight": 0.08},
+    {"ticker": "TD.TO", "weight": 0.08},
+    {"ticker": "ATD.TO", "weight": 0.08},
+    {"ticker": "CSU.TO", "weight": 0.07},
+    {"ticker": "CNR.TO", "weight": 0.07}
+   ],
+   "geo_angle": "Canadian bonds and blue chips plus a domestic Chilean bank: two low-hazard, low-tension countries.",
+   "band": "safe",
+   "expected_score": 33.2,
+   "estimated_splits": [
+    "ATD.TO",
+    "CSU.TO",
+    "XBB.TO"
+   ]
+  },
+  {
+   "id": "s4-canada-japan",
+   "label": "Two Quiet Democracies",
+   "profile": {
+    "persona": "Risk-method test portfolio (safe band)",
+    "base_currency": "CAD",
+    "risk_tolerance": "moderate",
+    "horizon_years": 10,
+    "objective": "balanced",
+    "max_single_holding": 0.25
+   },
+   "holdings": [
+    {"ticker": "XBB.TO", "weight": 0.2},
+    {"ticker": "ZST.TO", "weight": 0.1},
+    {"ticker": "MUFG", "weight": 0.1},
+    {"ticker": "SMFG", "weight": 0.08},
+    {"ticker": "FTS.TO", "weight": 0.1},
+    {"ticker": "RY.TO", "weight": 0.1},
+    {"ticker": "MFC.TO", "weight": 0.08},
+    {"ticker": "TD.TO", "weight": 0.08},
+    {"ticker": "ATD.TO", "weight": 0.08},
+    {"ticker": "CNR.TO", "weight": 0.08}
+   ],
+   "geo_angle": "Canadian bonds and blue chips plus two Japanese megabanks: stable democracies, mostly domestic revenue.",
+   "band": "safe",
+   "expected_score": 33.8,
+   "estimated_splits": [
+    "ATD.TO",
+    "SMFG",
+    "XBB.TO"
+   ]
+  },
+  {
+   "id": "s5-pacific-banks",
+   "label": "Pacific Rim Banks",
+   "profile": {
+    "persona": "Risk-method test portfolio (safe band)",
+    "base_currency": "CAD",
+    "risk_tolerance": "moderate",
+    "horizon_years": 10,
+    "objective": "balanced",
+    "max_single_holding": 0.25
+   },
+   "holdings": [
+    {"ticker": "XBB.TO", "weight": 0.2},
+    {"ticker": "ZST.TO", "weight": 0.1},
+    {"ticker": "RY.TO", "weight": 0.1},
+    {"ticker": "TD.TO", "weight": 0.08},
+    {"ticker": "MFC.TO", "weight": 0.08},
+    {"ticker": "FTS.TO", "weight": 0.1},
+    {"ticker": "BCH", "weight": 0.08},
+    {"ticker": "MUFG", "weight": 0.08},
+    {"ticker": "KB", "weight": 0.08},
+    {"ticker": "SHG", "weight": 0.1}
+   ],
+   "geo_angle": "Canadian bonds plus domestic banks in Canada, Chile, Japan and Korea: low hazard, home-market lenders.",
+   "band": "safe",
+   "expected_score": 32.5,
+   "estimated_splits": [
+    "XBB.TO"
+   ]
+  },
+  {
+   "id": "m1-global-60-40",
+   "label": "World Economy 60/40",
+   "profile": {
+    "persona": "Risk-method test portfolio (medium band)",
+    "base_currency": "CAD",
+    "risk_tolerance": "moderate",
+    "horizon_years": 10,
+    "objective": "balanced",
+    "max_single_holding": 0.25
+   },
+   "holdings": [
+    {"ticker": "SPY", "weight": 0.2},
+    {"ticker": "VXUS", "weight": 0.15},
+    {"ticker": "BND", "weight": 0.15},
+    {"ticker": "XBB.TO", "weight": 0.1},
+    {"ticker": "XIU.TO", "weight": 0.1},
+    {"ticker": "MSFT", "weight": 0.05},
+    {"ticker": "AAPL", "weight": 0.05},
+    {"ticker": "NVS", "weight": 0.05},
+    {"ticker": "TM", "weight": 0.05},
+    {"ticker": "UL", "weight": 0.05},
+    {"ticker": "JPM", "weight": 0.05}
+   ],
+   "geo_angle": "Global 60/40: US + international equities, US and Canadian bonds, a few global large caps; world-economy-like exposure.",
+   "band": "medium",
+   "expected_score": 39.9,
+   "estimated_splits": [
+    "AAPL",
+    "BND",
+    "JPM",
+    "MSFT",
+    "VXUS",
+    "XBB.TO"
+   ]
+  },
+  {
+   "id": "m2-em-broad",
+   "label": "Emerging Mix",
+   "profile": {
+    "persona": "Risk-method test portfolio (medium band)",
+    "base_currency": "CAD",
+    "risk_tolerance": "moderate",
+    "horizon_years": 10,
+    "objective": "balanced",
+    "max_single_holding": 0.25
+   },
+   "holdings": [
+    {"ticker": "VWO", "weight": 0.15},
+    {"ticker": "EMB", "weight": 0.1},
+    {"ticker": "HDB", "weight": 0.1},
+    {"ticker": "ITUB", "weight": 0.1},
+    {"ticker": "TLK", "weight": 0.1},
+    {"ticker": "INFY", "weight": 0.1},
+    {"ticker": "AMX", "weight": 0.1},
+    {"ticker": "BAP", "weight": 0.1},
+    {"ticker": "KB", "weight": 0.05},
+    {"ticker": "VALE", "weight": 0.1}
+   ],
+   "geo_angle": "Broad emerging markets (India, Brazil, Indonesia, Mexico, Peru, China via VWO) plus EM sovereign debt: higher fragility, limited war exposure.",
+   "band": "medium",
+   "expected_score": 40.5,
+   "estimated_splits": [
+    "VALE",
+    "VWO"
+   ]
+  },
+  {
+   "id": "m3-latam",
+   "label": "Latin Banks & Telcos",
+   "profile": {
+    "persona": "Risk-method test portfolio (medium band)",
+    "base_currency": "CAD",
+    "risk_tolerance": "moderate",
+    "horizon_years": 10,
+    "objective": "balanced",
+    "max_single_holding": 0.25
+   },
+   "holdings": [
+    {"ticker": "ITUB", "weight": 0.12},
+    {"ticker": "BBD", "weight": 0.1},
+    {"ticker": "AMX", "weight": 0.12},
+    {"ticker": "KOF", "weight": 0.1},
+    {"ticker": "BAP", "weight": 0.1},
+    {"ticker": "CIB", "weight": 0.1},
+    {"ticker": "FMX", "weight": 0.1},
+    {"ticker": "ABEV", "weight": 0.1},
+    {"ticker": "BCH", "weight": 0.08},
+    {"ticker": "SBS", "weight": 0.08}
+   ],
+   "geo_angle": "Latin American banks, telecoms and consumer staples: Brazil, Mexico, Peru, Colombia, Chile; moderate instability, low war risk.",
+   "band": "medium",
+   "expected_score": 41.4,
+   "estimated_splits": [
+    "FMX",
+    "SBS"
+   ]
+  },
+  {
+   "id": "m4-europe",
+   "label": "European Blue Chips",
+   "profile": {
+    "persona": "Risk-method test portfolio (medium band)",
+    "base_currency": "CAD",
+    "risk_tolerance": "moderate",
+    "horizon_years": 10,
+    "objective": "balanced",
+    "max_single_holding": 0.25
+   },
+   "holdings": [
+    {"ticker": "SAP", "weight": 0.1},
+    {"ticker": "ASML", "weight": 0.1},
+    {"ticker": "SHEL", "weight": 0.1},
+    {"ticker": "UL", "weight": 0.1},
+    {"ticker": "NVS", "weight": 0.1},
+    {"ticker": "AZN", "weight": 0.1},
+    {"ticker": "ING", "weight": 0.1},
+    {"ticker": "TTE", "weight": 0.1},
+    {"ticker": "NVO", "weight": 0.1},
+    {"ticker": "SAN", "weight": 0.1}
+   ],
+   "geo_angle": "European large caps (Germany, Netherlands, UK, France, Switzerland, Denmark, Spain): stable but war-adjacent news coverage, global revenue.",
+   "band": "medium",
+   "expected_score": 42.5,
+   "estimated_splits": [
+    "ASML",
+    "AZN",
+    "ING",
+    "NVO",
+    "SAN",
+    "SAP"
+   ]
+  },
+  {
+   "id": "m5-us-core",
+   "label": "North American Core",
+   "profile": {
+    "persona": "Risk-method test portfolio (medium band)",
+    "base_currency": "CAD",
+    "risk_tolerance": "moderate",
+    "horizon_years": 10,
+    "objective": "balanced",
+    "max_single_holding": 0.25
+   },
+   "holdings": [
+    {"ticker": "SPY", "weight": 0.25},
+    {"ticker": "BND", "weight": 0.2},
+    {"ticker": "XBB.TO", "weight": 0.1},
+    {"ticker": "MSFT", "weight": 0.07},
+    {"ticker": "JNJ", "weight": 0.07},
+    {"ticker": "PG", "weight": 0.07},
+    {"ticker": "JPM", "weight": 0.06},
+    {"ticker": "AAPL", "weight": 0.06},
+    {"ticker": "GOOGL", "weight": 0.06},
+    {"ticker": "RY.TO", "weight": 0.06}
+   ],
+   "geo_angle": "S&P 500, US and Canadian bonds, US mega-caps and a Canadian bank: one high-GPR-tension country balanced by Canada.",
+   "band": "medium",
+   "expected_score": 41.7,
+   "estimated_splits": [
+    "AAPL",
+    "BND",
+    "GOOGL",
+    "JNJ",
+    "JPM",
+    "MSFT",
+    "PG",
+    "XBB.TO"
+   ]
+  },
+  {
+   "id": "d1-china-pure",
+   "label": "All-In China",
+   "profile": {
+    "persona": "Risk-method test portfolio (dangerous band)",
+    "base_currency": "CAD",
+    "risk_tolerance": "moderate",
+    "horizon_years": 10,
+    "objective": "balanced",
+    "max_single_holding": 0.25
+   },
+   "holdings": [
+    {"ticker": "LI", "weight": 0.24},
+    {"ticker": "BABA", "weight": 0.12},
+    {"ticker": "PDD", "weight": 0.1},
+    {"ticker": "JD", "weight": 0.1},
+    {"ticker": "TCEHY", "weight": 0.1},
+    {"ticker": "BIDU", "weight": 0.1},
+    {"ticker": "YUMC", "weight": 0.07},
+    {"ticker": "TCOM", "weight": 0.07},
+    {"ticker": "UMC", "weight": 0.05},
+    {"ticker": "ASX", "weight": 0.05}
+   ],
+   "geo_angle": "Mainland China internet, EV and consumer names plus Taiwan chip packagers: sanctions, delisting, Taiwan Strait escalation.",
+   "band": "dangerous",
+   "expected_score": 47.1,
+   "estimated_splits": [
+    "ASX",
+    "BIDU"
+   ]
+  },
+  {
+   "id": "d2-mideast",
+   "label": "MENA Hotspots",
+   "profile": {
+    "persona": "Risk-method test portfolio (dangerous band)",
+    "base_currency": "CAD",
+    "risk_tolerance": "moderate",
+    "horizon_years": 10,
+    "objective": "balanced",
+    "max_single_holding": 0.25
+   },
+   "holdings": [
+    {"ticker": "ESLT", "weight": 0.15},
+    {"ticker": "TEVA", "weight": 0.1},
+    {"ticker": "CHKP", "weight": 0.1},
+    {"ticker": "NICE", "weight": 0.1},
+    {"ticker": "TKC", "weight": 0.15},
+    {"ticker": "KSA", "weight": 0.1},
+    {"ticker": "JMIA", "weight": 0.1},
+    {"ticker": "MTNOY", "weight": 0.05},
+    {"ticker": "BBVA", "weight": 0.05},
+    {"ticker": "LI", "weight": 0.1}
+   ],
+   "geo_angle": "Israel defence, pharma and cyber, Turkey, Saudi Arabia, Nigeria/Egypt e-commerce, African telecom, China EV.",
+   "band": "dangerous",
+   "expected_score": 49.6,
+   "estimated_splits": [
+    "BBVA",
+    "CHKP",
+    "ESLT",
+    "JMIA",
+    "NICE",
+    "TEVA"
+   ]
+  },
+  {
+   "id": "d3-sanctions-mix",
+   "label": "Sanctions Basket",
+   "profile": {
+    "persona": "Risk-method test portfolio (dangerous band)",
+    "base_currency": "CAD",
+    "risk_tolerance": "moderate",
+    "horizon_years": 10,
+    "objective": "balanced",
+    "max_single_holding": 0.25
+   },
+   "holdings": [
+    {"ticker": "ESLT", "weight": 0.12},
+    {"ticker": "TKC", "weight": 0.12},
+    {"ticker": "LI", "weight": 0.12},
+    {"ticker": "CHT", "weight": 0.12},
+    {"ticker": "JMIA", "weight": 0.1},
+    {"ticker": "BABA", "weight": 0.1},
+    {"ticker": "TEVA", "weight": 0.1},
+    {"ticker": "PDD", "weight": 0.08},
+    {"ticker": "CHKP", "weight": 0.09},
+    {"ticker": "BTC", "weight": 0.05}
+   ],
+   "geo_angle": "Sanctions and conflict basket: Israel defence/cyber, Turkey, China EV and e-commerce, Taiwan telecom, Africa, crypto.",
+   "band": "dangerous",
+   "expected_score": 49.6,
+   "estimated_splits": [
+    "CHKP",
+    "ESLT",
+    "JMIA",
+    "TEVA"
+   ]
+  },
+  {
+   "id": "d4-israel-turkey",
+   "label": "Levant & Bosphorus",
+   "profile": {
+    "persona": "Risk-method test portfolio (dangerous band)",
+    "base_currency": "CAD",
+    "risk_tolerance": "moderate",
+    "horizon_years": 10,
+    "objective": "balanced",
+    "max_single_holding": 0.25
+   },
+   "holdings": [
+    {"ticker": "ESLT", "weight": 0.18},
+    {"ticker": "TEVA", "weight": 0.14},
+    {"ticker": "TKC", "weight": 0.16},
+    {"ticker": "CHKP", "weight": 0.12},
+    {"ticker": "NICE", "weight": 0.12},
+    {"ticker": "LI", "weight": 0.08},
+    {"ticker": "CHT", "weight": 0.06},
+    {"ticker": "JMIA", "weight": 0.06},
+    {"ticker": "BABA", "weight": 0.04},
+    {"ticker": "KSA", "weight": 0.04}
+   ],
+   "geo_angle": "Israel at war plus Turkey: defence, pharma, cyber, Turkish telecom, topped up with China, Taiwan, Saudi and Africa.",
+   "band": "dangerous",
+   "expected_score": 51.4,
+   "estimated_splits": [
+    "CHKP",
+    "ESLT",
+    "JMIA",
+    "NICE",
+    "TEVA"
+   ]
+  },
+  {
+   "id": "d5-israel-war",
+   "label": "Israel at War",
+   "profile": {
+    "persona": "Risk-method test portfolio (dangerous band)",
+    "base_currency": "CAD",
+    "risk_tolerance": "moderate",
+    "horizon_years": 10,
+    "objective": "balanced",
+    "max_single_holding": 0.25
+   },
+   "holdings": [
+    {"ticker": "ESLT", "weight": 0.2},
+    {"ticker": "TEVA", "weight": 0.14},
+    {"ticker": "CHKP", "weight": 0.14},
+    {"ticker": "NICE", "weight": 0.14},
+    {"ticker": "TKC", "weight": 0.12},
+    {"ticker": "LI", "weight": 0.06},
+    {"ticker": "CHT", "weight": 0.06},
+    {"ticker": "KSA", "weight": 0.05},
+    {"ticker": "JMIA", "weight": 0.05},
+    {"ticker": "BIDU", "weight": 0.04}
+   ],
+   "geo_angle": "Israel concentration (defence contractor, pharma, cyber, software) under active conflict, plus Turkey, China and Taiwan.",
+   "band": "dangerous",
+   "expected_score": 51.8,
+   "estimated_splits": [
+    "BIDU",
+    "CHKP",
+    "ESLT",
+    "JMIA",
+    "NICE",
+    "TEVA"
+   ]
+  }
+ ],
+ "regions": {
+  "North America": [
+   "USA",
+   "CAN"
+  ],
+  "Latin America": [
+   "BRA",
+   "MEX",
+   "ARG",
+   "CHL",
+   "PER",
+   "COL",
+   "URY",
+   "PAN",
+   "DOM"
+  ],
+  "Europe": [
+   "GBR",
+   "DEU",
+   "FRA",
+   "NLD",
+   "CHE",
+   "DNK",
+   "ESP",
+   "ITA",
+   "SWE",
+   "FIN",
+   "NOR",
+   "POL",
+   "TUR"
+  ],
+  "Japan & Korea": [
+   "JPN",
+   "KOR"
+  ],
+  "Asia ex Japan/Korea": [
+   "CHN",
+   "HKG",
+   "TWN",
+   "IND",
+   "IDN",
+   "PHL",
+   "SGP",
+   "THA",
+   "VNM",
+   "MYS",
+   "MNG"
+  ],
+  "Oceania": [
+   "AUS"
+  ],
+  "Middle East": [
+   "ISR",
+   "SAU",
+   "ARE",
+   "QAT"
+  ],
+  "Africa": [
+   "ZAF",
+   "NGA",
+   "GHA",
+   "COD",
+   "ZMB",
+   "CIV",
+   "BFA",
+   "SEN",
+   "MLI",
+   "TZA",
+   "GIN",
+   "EGY",
+   "MAR",
+   "KEN",
+   "CMR",
+   "UGA"
+  ]
+ },
+ "assets": {
+  "AAPL": {
+   "name": "Apple",
+   "kind": "equity",
+   "listing": "NASDAQ",
+   "country": "USA",
+   "em": false
+  },
+  "MSFT": {
+   "name": "Microsoft",
+   "kind": "equity",
+   "listing": "NASDAQ",
+   "country": "USA",
+   "em": false
+  },
+  "NVDA": {
+   "name": "NVIDIA",
+   "kind": "equity",
+   "listing": "NASDAQ",
+   "country": "USA",
+   "em": false
+  },
+  "XOM": {
+   "name": "ExxonMobil",
+   "kind": "equity",
+   "listing": "NYSE",
+   "country": "USA",
+   "em": false
+  },
+  "LMT": {
+   "name": "Lockheed Martin",
+   "kind": "equity",
+   "listing": "NYSE",
+   "country": "USA",
+   "em": false
+  },
+  "RTX": {
+   "name": "RTX",
+   "kind": "equity",
+   "listing": "NYSE",
+   "country": "USA",
+   "em": false
+  },
+  "JNJ": {
+   "name": "Johnson & Johnson",
+   "kind": "equity",
+   "listing": "NYSE",
+   "country": "USA",
+   "em": false
+  },
+  "RY": {
+   "name": "Royal Bank of Canada",
+   "kind": "equity",
+   "listing": "TSX/NYSE",
+   "country": "CAN",
+   "em": false
+  },
+  "TD": {
+   "name": "Toronto-Dominion Bank",
+   "kind": "equity",
+   "listing": "TSX/NYSE",
+   "country": "CAN",
+   "em": false
+  },
+  "ENB": {
+   "name": "Enbridge",
+   "kind": "equity",
+   "listing": "TSX/NYSE",
+   "country": "CAN",
+   "em": false
+  },
+  "FTS": {
+   "name": "Fortis",
+   "kind": "equity",
+   "listing": "TSX/NYSE",
+   "country": "CAN",
+   "em": false
+  },
+  "CNI": {
+   "name": "Canadian National Railway",
+   "kind": "equity",
+   "listing": "TSX/NYSE",
+   "country": "CAN",
+   "em": false
+  },
+  "CNQ": {
+   "name": "Canadian Natural Resources",
+   "kind": "equity",
+   "listing": "TSX/NYSE",
+   "country": "CAN",
+   "em": false
+  },
+  "SHOP": {
+   "name": "Shopify",
+   "kind": "equity",
+   "listing": "TSX/NYSE",
+   "country": "CAN",
+   "em": false
+  },
+  "MFC": {
+   "name": "Manulife",
+   "kind": "equity",
+   "listing": "TSX/NYSE",
+   "country": "CAN",
+   "em": false,
+   "ops": [
+    "CAN",
+    "USA",
+    "HKG",
+    "JPN",
+    "VNM"
+   ]
+  },
+  "CSU": {
+   "name": "Constellation Software",
+   "kind": "equity",
+   "listing": "TSX",
+   "country": "CAN",
+   "em": false
+  },
+  "TECK": {
+   "name": "Teck Resources",
+   "kind": "equity",
+   "listing": "TSX/NYSE",
+   "country": "CAN",
+   "em": false,
+   "ops": [
+    "CAN",
+    "CHL",
+    "PER"
+   ]
+  },
+  "B": {
+   "name": "Barrick Mining",
+   "kind": "equity",
+   "listing": "NYSE/TSX",
+   "country": "CAN",
+   "em": false,
+   "ops": [
+    "USA",
+    "COD",
+    "MLI",
+    "TZA",
+    "DOM",
+    "ARG"
+   ],
+   "note": "ticker changed from GOLD to B in 2025; Mali mine dispute"
+  },
+  "IVN.TO": {
+   "name": "Ivanhoe Mines",
+   "kind": "equity",
+   "listing": "TSX",
+   "country": "CAN",
+   "em": false,
+   "ops": [
+    "COD",
+    "ZAF"
+   ],
+   "note": "Kamoa-Kakula copper, DRC"
+  },
+  "FM.TO": {
+   "name": "First Quantum Minerals",
+   "kind": "equity",
+   "listing": "TSX",
+   "country": "CAN",
+   "em": false,
+   "ops": [
+    "ZMB",
+    "PAN"
+   ],
+   "note": "Cobre Panama halted 2023"
+  },
+  "EDV.TO": {
+   "name": "Endeavour Mining",
+   "kind": "equity",
+   "listing": "TSX/LSE",
+   "country": "GBR",
+   "em": false,
+   "ops": [
+    "CIV",
+    "BFA",
+    "SEN"
+   ],
+   "note": "West African gold; Sahel coup belt"
+  },
+  "SCCO": {
+   "name": "Southern Copper",
+   "kind": "equity",
+   "listing": "NYSE",
+   "country": "USA",
+   "em": false,
+   "ops": [
+    "PER",
+    "MEX"
+   ]
+  },
+  "CPNG": {
+   "name": "Coupang",
+   "kind": "equity",
+   "listing": "NYSE",
+   "country": "USA",
+   "em": false,
+   "ops": [
+    "KOR",
+    "TWN"
+   ]
+  },
+  "TM": {
+   "name": "Toyota Motor",
+   "kind": "equity",
+   "listing": "NYSE ADR",
+   "country": "JPN",
+   "em": false
+  },
+  "SONY": {
+   "name": "Sony Group",
+   "kind": "equity",
+   "listing": "NYSE ADR",
+   "country": "JPN",
+   "em": false
+  },
+  "MUFG": {
+   "name": "Mitsubishi UFJ Financial",
+   "kind": "equity",
+   "listing": "NYSE ADR",
+   "country": "JPN",
+   "em": false
+  },
+  "SMFG": {
+   "name": "Sumitomo Mitsui Financial",
+   "kind": "equity",
+   "listing": "NYSE ADR",
+   "country": "JPN",
+   "em": false
+  },
+  "HMC": {
+   "name": "Honda Motor",
+   "kind": "equity",
+   "listing": "NYSE ADR",
+   "country": "JPN",
+   "em": false
+  },
+  "TAK": {
+   "name": "Takeda Pharmaceutical",
+   "kind": "equity",
+   "listing": "NYSE ADR",
+   "country": "JPN",
+   "em": false
+  },
+  "IX": {
+   "name": "ORIX",
+   "kind": "equity",
+   "listing": "NYSE ADR",
+   "country": "JPN",
+   "em": false
+  },
+  "KB": {
+   "name": "KB Financial Group",
+   "kind": "equity",
+   "listing": "NYSE ADR",
+   "country": "KOR",
+   "em": true
+  },
+  "SHG": {
+   "name": "Shinhan Financial Group",
+   "kind": "equity",
+   "listing": "NYSE ADR",
+   "country": "KOR",
+   "em": true
+  },
+  "PKX": {
+   "name": "POSCO Holdings",
+   "kind": "equity",
+   "listing": "NYSE ADR",
+   "country": "KOR",
+   "em": true
+  },
+  "SKM": {
+   "name": "SK Telecom",
+   "kind": "equity",
+   "listing": "NYSE ADR",
+   "country": "KOR",
+   "em": true
+  },
+  "KT": {
+   "name": "KT Corp",
+   "kind": "equity",
+   "listing": "NYSE ADR",
+   "country": "KOR",
+   "em": true
+  },
+  "TSM": {
+   "name": "Taiwan Semiconductor (TSMC)",
+   "kind": "equity",
+   "listing": "NYSE ADR",
+   "country": "TWN",
+   "em": true
+  },
+  "UMC": {
+   "name": "United Microelectronics",
+   "kind": "equity",
+   "listing": "NYSE ADR",
+   "country": "TWN",
+   "em": true
+  },
+  "ASX": {
+   "name": "ASE Technology",
+   "kind": "equity",
+   "listing": "NYSE ADR",
+   "country": "TWN",
+   "em": true
+  },
+  "CHT": {
+   "name": "Chunghwa Telecom",
+   "kind": "equity",
+   "listing": "NYSE ADR",
+   "country": "TWN",
+   "em": true
+  },
+  "BABA": {
+   "name": "Alibaba Group",
+   "kind": "equity",
+   "listing": "NYSE ADR",
+   "country": "CHN",
+   "em": true,
+   "note": "VIE / ADR delisting & outbound-investment risk"
+  },
+  "JD": {
+   "name": "JD.com",
+   "kind": "equity",
+   "listing": "NASDAQ ADR",
+   "country": "CHN",
+   "em": true,
+   "note": "VIE / ADR delisting & outbound-investment risk"
+  },
+  "PDD": {
+   "name": "PDD Holdings",
+   "kind": "equity",
+   "listing": "NASDAQ ADR",
+   "country": "CHN",
+   "em": true,
+   "note": "VIE / ADR delisting & outbound-investment risk"
+  },
+  "BIDU": {
+   "name": "Baidu",
+   "kind": "equity",
+   "listing": "NASDAQ ADR",
+   "country": "CHN",
+   "em": true,
+   "note": "VIE / ADR delisting & outbound-investment risk"
+  },
+  "TCOM": {
+   "name": "Trip.com",
+   "kind": "equity",
+   "listing": "NASDAQ ADR",
+   "country": "CHN",
+   "em": true,
+   "note": "VIE / ADR delisting & outbound-investment risk"
+  },
+  "LI": {
+   "name": "Li Auto",
+   "kind": "equity",
+   "listing": "NASDAQ ADR",
+   "country": "CHN",
+   "em": true,
+   "note": "VIE / ADR delisting & outbound-investment risk"
+  },
+  "YUMC": {
+   "name": "Yum China",
+   "kind": "equity",
+   "listing": "NYSE",
+   "country": "CHN",
+   "em": true
+  },
+  "TCEHY": {
+   "name": "Tencent Holdings",
+   "kind": "equity",
+   "listing": "OTC ADR",
+   "country": "CHN",
+   "em": true,
+   "note": "VIE / ADR delisting & outbound-investment risk"
+  },
+  "HSBC": {
+   "name": "HSBC Holdings",
+   "kind": "equity",
+   "listing": "NYSE ADR",
+   "country": "GBR",
+   "em": false,
+   "ops": [
+    "GBR",
+    "HKG",
+    "CHN"
+   ]
+  },
+  "HDB": {
+   "name": "HDFC Bank",
+   "kind": "equity",
+   "listing": "NYSE ADR",
+   "country": "IND",
+   "em": true
+  },
+  "IBN": {
+   "name": "ICICI Bank",
+   "kind": "equity",
+   "listing": "NYSE ADR",
+   "country": "IND",
+   "em": true
+  },
+  "INFY": {
+   "name": "Infosys",
+   "kind": "equity",
+   "listing": "NYSE ADR",
+   "country": "IND",
+   "em": true
+  },
+  "WIT": {
+   "name": "Wipro",
+   "kind": "equity",
+   "listing": "NYSE ADR",
+   "country": "IND",
+   "em": true
+  },
+  "RDY": {
+   "name": "Dr. Reddy's Laboratories",
+   "kind": "equity",
+   "listing": "NYSE ADR",
+   "country": "IND",
+   "em": true
+  },
+  "MMYT": {
+   "name": "MakeMyTrip",
+   "kind": "equity",
+   "listing": "NASDAQ",
+   "country": "IND",
+   "em": true
+  },
+  "TLK": {
+   "name": "Telkom Indonesia",
+   "kind": "equity",
+   "listing": "NYSE ADR",
+   "country": "IDN",
+   "em": true
+  },
+  "PHI": {
+   "name": "PLDT",
+   "kind": "equity",
+   "listing": "NYSE ADR",
+   "country": "PHL",
+   "em": true
+  },
+  "SE": {
+   "name": "Sea Ltd",
+   "kind": "equity",
+   "listing": "NYSE ADR",
+   "country": "SGP",
+   "em": false,
+   "ops": [
+    "IDN",
+    "THA",
+    "VNM",
+    "PHL",
+    "BRA"
+   ]
+  },
+  "GRAB": {
+   "name": "Grab Holdings",
+   "kind": "equity",
+   "listing": "NASDAQ",
+   "country": "SGP",
+   "em": false,
+   "ops": [
+    "IDN",
+    "MYS",
+    "PHL",
+    "THA",
+    "VNM"
+   ]
+  },
+  "BHP": {
+   "name": "BHP Group",
+   "kind": "equity",
+   "listing": "NYSE ADR",
+   "country": "AUS",
+   "em": false,
+   "ops": [
+    "AUS",
+    "CHL",
+    "CAN"
+   ]
+  },
+  "RIO": {
+   "name": "Rio Tinto",
+   "kind": "equity",
+   "listing": "NYSE ADR",
+   "country": "GBR",
+   "em": false,
+   "ops": [
+    "AUS",
+    "CAN",
+    "MNG",
+    "GIN"
+   ]
+  },
+  "ASML": {
+   "name": "ASML Holding",
+   "kind": "equity",
+   "listing": "NASDAQ ADR",
+   "country": "NLD",
+   "em": false
+  },
+  "SAP": {
+   "name": "SAP",
+   "kind": "equity",
+   "listing": "NYSE ADR",
+   "country": "DEU",
+   "em": false
+  },
+  "NVO": {
+   "name": "Novo Nordisk",
+   "kind": "equity",
+   "listing": "NASDAQ ADR",
+   "country": "DNK",
+   "em": false
+  },
+  "AZN": {
+   "name": "AstraZeneca",
+   "kind": "equity",
+   "listing": "NASDAQ ADR",
+   "country": "GBR",
+   "em": false
+  },
+  "SHEL": {
+   "name": "Shell",
+   "kind": "equity",
+   "listing": "NYSE ADR",
+   "country": "GBR",
+   "em": false
+  },
+  "TTE": {
+   "name": "TotalEnergies",
+   "kind": "equity",
+   "listing": "NYSE ADR",
+   "country": "FRA",
+   "em": false
+  },
+  "UL": {
+   "name": "Unilever",
+   "kind": "equity",
+   "listing": "NYSE ADR",
+   "country": "GBR",
+   "em": false
+  },
+  "NVS": {
+   "name": "Novartis",
+   "kind": "equity",
+   "listing": "NYSE ADR",
+   "country": "CHE",
+   "em": false
+  },
+  "SNY": {
+   "name": "Sanofi",
+   "kind": "equity",
+   "listing": "NYSE ADR",
+   "country": "FRA",
+   "em": false
+  },
+  "ING": {
+   "name": "ING Groep",
+   "kind": "equity",
+   "listing": "NYSE ADR",
+   "country": "NLD",
+   "em": false
+  },
+  "ERIC": {
+   "name": "Ericsson",
+   "kind": "equity",
+   "listing": "NASDAQ ADR",
+   "country": "SWE",
+   "em": false
+  },
+  "NOK": {
+   "name": "Nokia",
+   "kind": "equity",
+   "listing": "NYSE ADR",
+   "country": "FIN",
+   "em": false
+  },
+  "EQNR": {
+   "name": "Equinor",
+   "kind": "equity",
+   "listing": "NYSE ADR",
+   "country": "NOR",
+   "em": false
+  },
+  "E": {
+   "name": "Eni",
+   "kind": "equity",
+   "listing": "NYSE ADR",
+   "country": "ITA",
+   "em": false
+  },
+  "RACE": {
+   "name": "Ferrari",
+   "kind": "equity",
+   "listing": "NYSE ADR",
+   "country": "ITA",
+   "em": false
+  },
+  "DB": {
+   "name": "Deutsche Bank",
+   "kind": "equity",
+   "listing": "NYSE ADR",
+   "country": "DEU",
+   "em": false
+  },
+  "SAN": {
+   "name": "Banco Santander",
+   "kind": "equity",
+   "listing": "NYSE ADR",
+   "country": "ESP",
+   "em": false,
+   "ops": [
+    "ESP",
+    "GBR",
+    "BRA",
+    "MEX",
+    "USA"
+   ]
+  },
+  "BBVA": {
+   "name": "BBVA",
+   "kind": "equity",
+   "listing": "NYSE ADR",
+   "country": "ESP",
+   "em": false,
+   "ops": [
+    "ESP",
+    "MEX",
+    "TUR"
+   ],
+   "note": "Garanti BBVA = Turkey exposure"
+  },
+  "BAESY": {
+   "name": "BAE Systems",
+   "kind": "equity",
+   "listing": "OTC ADR",
+   "country": "GBR",
+   "em": false
+  },
+  "RNMBY": {
+   "name": "Rheinmetall",
+   "kind": "equity",
+   "listing": "OTC ADR",
+   "country": "DEU",
+   "em": false
+  },
+  "TKC": {
+   "name": "Turkcell",
+   "kind": "equity",
+   "listing": "NYSE ADR",
+   "country": "TUR",
+   "em": true
+  },
+  "TEVA": {
+   "name": "Teva Pharmaceutical",
+   "kind": "equity",
+   "listing": "NYSE ADR",
+   "country": "ISR",
+   "em": false
+  },
+  "CHKP": {
+   "name": "Check Point Software",
+   "kind": "equity",
+   "listing": "NASDAQ",
+   "country": "ISR",
+   "em": false
+  },
+  "ESLT": {
+   "name": "Elbit Systems",
+   "kind": "equity",
+   "listing": "NASDAQ",
+   "country": "ISR",
+   "em": false
+  },
+  "NICE": {
+   "name": "NICE Ltd",
+   "kind": "equity",
+   "listing": "NASDAQ ADR",
+   "country": "ISR",
+   "em": false
+  },
+  "GFI": {
+   "name": "Gold Fields",
+   "kind": "equity",
+   "listing": "NYSE ADR",
+   "country": "ZAF",
+   "em": true,
+   "ops": [
+    "ZAF",
+    "GHA",
+    "AUS",
+    "PER"
+   ]
+  },
+  "SBSW": {
+   "name": "Sibanye-Stillwater",
+   "kind": "equity",
+   "listing": "NYSE ADR",
+   "country": "ZAF",
+   "em": true,
+   "ops": [
+    "ZAF",
+    "USA"
+   ]
+  },
+  "HMY": {
+   "name": "Harmony Gold",
+   "kind": "equity",
+   "listing": "NYSE ADR",
+   "country": "ZAF",
+   "em": true
+  },
+  "NPSNY": {
+   "name": "Naspers",
+   "kind": "equity",
+   "listing": "OTC ADR",
+   "country": "ZAF",
+   "em": true,
+   "ops": [
+    "ZAF",
+    "CHN"
+   ],
+   "note": "value largely its Tencent stake"
+  },
+  "MTNOY": {
+   "name": "MTN Group",
+   "kind": "equity",
+   "listing": "OTC ADR",
+   "country": "ZAF",
+   "em": true,
+   "ops": [
+    "ZAF",
+    "NGA",
+    "GHA",
+    "CMR",
+    "UGA"
+   ]
+  },
+  "AU": {
+   "name": "AngloGold Ashanti",
+   "kind": "equity",
+   "listing": "NYSE ADR",
+   "country": "GBR",
+   "em": false,
+   "ops": [
+    "GHA",
+    "GIN",
+    "TZA",
+    "AUS",
+    "BRA"
+   ]
+  },
+  "JMIA": {
+   "name": "Jumia Technologies",
+   "kind": "equity",
+   "listing": "NYSE ADR",
+   "country": "DEU",
+   "em": false,
+   "ops": [
+    "NGA",
+    "EGY",
+    "MAR",
+    "KEN",
+    "CIV"
+   ]
+  },
+  "ITUB": {
+   "name": "Itaú Unibanco",
+   "kind": "equity",
+   "listing": "NYSE ADR",
+   "country": "BRA",
+   "em": true
+  },
+  "BBD": {
+   "name": "Banco Bradesco",
+   "kind": "equity",
+   "listing": "NYSE ADR",
+   "country": "BRA",
+   "em": true
+  },
+  "ABEV": {
+   "name": "Ambev",
+   "kind": "equity",
+   "listing": "NYSE ADR",
+   "country": "BRA",
+   "em": true
+  },
+  "SBS": {
+   "name": "Sabesp",
+   "kind": "equity",
+   "listing": "NYSE ADR",
+   "country": "BRA",
+   "em": true
+  },
+  "PBR": {
+   "name": "Petrobras",
+   "kind": "equity",
+   "listing": "NYSE ADR",
+   "country": "BRA",
+   "em": true,
+   "note": "state-controlled"
+  },
+  "VALE": {
+   "name": "Vale",
+   "kind": "equity",
+   "listing": "NYSE ADR",
+   "country": "BRA",
+   "em": true,
+   "note": "iron ore demand tied to China"
+  },
+  "NU": {
+   "name": "Nu Holdings",
+   "kind": "equity",
+   "listing": "NYSE",
+   "country": "BRA",
+   "em": true,
+   "ops": [
+    "BRA",
+    "MEX",
+    "COL"
+   ]
+  },
+  "AMX": {
+   "name": "América Movil",
+   "kind": "equity",
+   "listing": "NYSE ADR",
+   "country": "MEX",
+   "em": true
+  },
+  "FMX": {
+   "name": "FEMSA",
+   "kind": "equity",
+   "listing": "NYSE ADR",
+   "country": "MEX",
+   "em": true
+  },
+  "CX": {
+   "name": "Cemex",
+   "kind": "equity",
+   "listing": "NYSE ADR",
+   "country": "MEX",
+   "em": true
+  },
+  "KOF": {
+   "name": "Coca-Cola FEMSA",
+   "kind": "equity",
+   "listing": "NYSE ADR",
+   "country": "MEX",
+   "em": true
+  },
+  "ASR": {
+   "name": "Grupo Aeroportuario del Sureste",
+   "kind": "equity",
+   "listing": "NYSE ADR",
+   "country": "MEX",
+   "em": true
+  },
+  "YPF": {
+   "name": "YPF",
+   "kind": "equity",
+   "listing": "NYSE ADR",
+   "country": "ARG",
+   "em": true
+  },
+  "GGAL": {
+   "name": "Grupo Financiero Galicia",
+   "kind": "equity",
+   "listing": "NYSE ADR",
+   "country": "ARG",
+   "em": true
+  },
+  "VIST": {
+   "name": "Vista Energy",
+   "kind": "equity",
+   "listing": "NYSE ADR",
+   "country": "ARG",
+   "em": true
+  },
+  "PAM": {
+   "name": "Pampa Energía",
+   "kind": "equity",
+   "listing": "NYSE ADR",
+   "country": "ARG",
+   "em": true
+  },
+  "MELI": {
+   "name": "MercadoLibre",
+   "kind": "equity",
+   "listing": "NASDAQ",
+   "country": "URY",
+   "em": true,
+   "ops": [
+    "BRA",
+    "ARG",
+    "MEX"
+   ]
+  },
+  "SQM": {
+   "name": "Sociedad Química y Minera",
+   "kind": "equity",
+   "listing": "NYSE ADR",
+   "country": "CHL",
+   "em": true,
+   "note": "lithium; Chile nationalization policy"
+  },
+  "BCH": {
+   "name": "Banco de Chile",
+   "kind": "equity",
+   "listing": "NYSE ADR",
+   "country": "CHL",
+   "em": true
+  },
+  "BAP": {
+   "name": "Credicorp",
+   "kind": "equity",
+   "listing": "NYSE ADR",
+   "country": "PER",
+   "em": true
+  },
+  "BVN": {
+   "name": "Buenaventura",
+   "kind": "equity",
+   "listing": "NYSE ADR",
+   "country": "PER",
+   "em": true
+  },
+  "EC": {
+   "name": "Ecopetrol",
+   "kind": "equity",
+   "listing": "NYSE ADR",
+   "country": "COL",
+   "em": true,
+   "note": "state-controlled"
+  },
+  "CIB": {
+   "name": "Bancolombia / Grupo Cibest",
+   "kind": "equity",
+   "listing": "NYSE ADR",
+   "country": "COL",
+   "em": true
+  },
+  "SPY": {
+   "name": "SPDR S&P 500",
+   "kind": "etf",
+   "listing": "NYSE Arca",
+   "country": "USA",
+   "em": false,
+   "primary_countries": [
+    "USA"
+   ]
+  },
+  "VTI": {
+   "name": "Vanguard Total Stock Market",
+   "kind": "etf",
+   "listing": "NYSE Arca",
+   "country": "USA",
+   "em": false,
+   "primary_countries": [
+    "USA"
+   ]
+  },
+  "ESGV": {
+   "name": "Vanguard ESG U.S. Stock",
+   "kind": "etf",
+   "listing": "NASDAQ",
+   "country": "USA",
+   "em": false,
+   "primary_countries": [
+    "USA"
+   ]
+  },
+  "ITA": {
+   "name": "iShares U.S. Aerospace & Defense",
+   "kind": "etf",
+   "listing": "Cboe",
+   "country": "USA",
+   "em": false,
+   "primary_countries": [
+    "USA"
+   ]
+  },
+  "VXUS": {
+   "name": "Vanguard Total International Stock",
+   "kind": "etf",
+   "listing": "NASDAQ",
+   "country": "USA",
+   "em": false,
+   "note": "~25% EM",
+   "primary_countries": [
+    "JPN",
+    "GBR",
+    "CAN",
+    "CHN",
+    "FRA",
+    "CHE",
+    "DEU",
+    "TWN",
+    "IND"
+   ]
+  },
+  "ESGD": {
+   "name": "iShares ESG Aware MSCI EAFE",
+   "kind": "etf",
+   "listing": "NASDAQ",
+   "country": "USA",
+   "em": false,
+   "primary_countries": [
+    "JPN",
+    "GBR",
+    "FRA",
+    "CHE",
+    "DEU"
+   ]
+  },
+  "VWO": {
+   "name": "Vanguard FTSE Emerging Markets",
+   "kind": "etf",
+   "listing": "NYSE Arca",
+   "country": "USA",
+   "em": true,
+   "note": "FTSE: excludes South Korea",
+   "primary_countries": [
+    "CHN",
+    "IND",
+    "TWN",
+    "BRA",
+    "SAU",
+    "ZAF",
+    "MEX"
+   ]
+  },
+  "VEE": {
+   "name": "Vanguard FTSE Emerging Markets All Cap (CAD)",
+   "kind": "etf",
+   "listing": "TSX",
+   "country": "CAN",
+   "em": true,
+   "note": "FTSE: excludes South Korea",
+   "primary_countries": [
+    "CHN",
+    "IND",
+    "TWN",
+    "BRA",
+    "SAU",
+    "ZAF"
+   ]
+  },
+  "ESGE": {
+   "name": "iShares ESG Aware MSCI EM",
+   "kind": "etf",
+   "listing": "NASDAQ",
+   "country": "USA",
+   "em": true,
+   "primary_countries": [
+    "CHN",
+    "TWN",
+    "IND",
+    "KOR",
+    "BRA"
+   ]
+  },
+  "AFK": {
+   "name": "VanEck Africa Index",
+   "kind": "etf",
+   "listing": "NYSE Arca",
+   "country": "USA",
+   "em": true,
+   "primary_countries": [
+    "ZAF",
+    "MAR",
+    "EGY",
+    "NGA",
+    "KEN"
+   ]
+  },
+  "EZA": {
+   "name": "iShares MSCI South Africa",
+   "kind": "etf",
+   "listing": "NYSE Arca",
+   "country": "USA",
+   "em": true,
+   "primary_countries": [
+    "ZAF"
+   ]
+  },
+  "KSA": {
+   "name": "iShares MSCI Saudi Arabia",
+   "kind": "etf",
+   "listing": "NYSE Arca",
+   "country": "USA",
+   "em": true,
+   "primary_countries": [
+    "SAU"
+   ]
+  },
+  "UAE": {
+   "name": "iShares MSCI UAE",
+   "kind": "etf",
+   "listing": "NASDAQ",
+   "country": "USA",
+   "em": true,
+   "primary_countries": [
+    "ARE"
+   ]
+  },
+  "QAT": {
+   "name": "iShares MSCI Qatar",
+   "kind": "etf",
+   "listing": "NASDAQ",
+   "country": "USA",
+   "em": true,
+   "primary_countries": [
+    "QAT"
+   ]
+  },
+  "EPOL": {
+   "name": "iShares MSCI Poland",
+   "kind": "etf",
+   "listing": "NYSE Arca",
+   "country": "USA",
+   "em": true,
+   "primary_countries": [
+    "POL"
+   ]
+  },
+  "URA": {
+   "name": "Global X Uranium",
+   "kind": "etf",
+   "listing": "NYSE Arca",
+   "country": "USA",
+   "em": false,
+   "note": "Kazatomprom = KAZ",
+   "primary_countries": [
+    "CAN",
+    "KAZ",
+    "USA",
+    "AUS"
+   ]
+  },
+  "BND": {
+   "name": "Vanguard Total Bond Market",
+   "kind": "bond_etf",
+   "listing": "NASDAQ",
+   "country": "USA",
+   "em": false,
+   "primary_countries": [
+    "USA"
+   ]
+  },
+  "TLT": {
+   "name": "iShares 20+ Year Treasury",
+   "kind": "bond_etf",
+   "listing": "NASDAQ",
+   "country": "USA",
+   "em": false,
+   "primary_countries": [
+    "USA"
+   ]
+  },
+  "ZST": {
+   "name": "BMO Ultra Short-Term Bond (CAD)",
+   "kind": "bond_etf",
+   "listing": "TSX",
+   "country": "CAN",
+   "em": false,
+   "primary_countries": [
+    "CAN"
+   ]
+  },
+  "VWOB": {
+   "name": "Vanguard EM Government Bond (USD)",
+   "kind": "bond_etf",
+   "listing": "NASDAQ",
+   "country": "USA",
+   "em": true,
+   "primary_countries": [
+    "MEX",
+    "SAU",
+    "IDN",
+    "TUR",
+    "BRA",
+    "COL"
+   ]
+  },
+  "EMB": {
+   "name": "iShares J.P. Morgan USD EM Bond",
+   "kind": "bond_etf",
+   "listing": "NASDAQ",
+   "country": "USA",
+   "em": true,
+   "primary_countries": [
+    "MEX",
+    "SAU",
+    "TUR",
+    "IDN",
+    "ARG",
+    "COL"
+   ]
+  },
+  "EMLC": {
+   "name": "VanEck J.P. Morgan EM Local Currency Bond",
+   "kind": "bond_etf",
+   "listing": "NYSE Arca",
+   "country": "USA",
+   "em": true,
+   "note": "FX / capital-control channel",
+   "primary_countries": [
+    "BRA",
+    "MEX",
+    "IDN",
+    "ZAF",
+    "MYS",
+    "THA"
+   ]
+  },
+  "GLD": {
+   "name": "SPDR Gold Shares",
+   "kind": "commodity",
+   "listing": "NYSE Arca",
+   "country": null,
+   "em": false
+  },
+  "BTC": {
+   "name": "Bitcoin",
+   "kind": "crypto",
+   "listing": null,
+   "country": null,
+   "em": false
+  }
+ },
+ "showcase_portfolios": [
+  {
+   "id": "qc-retiree-income",
+   "label": "The Bunker",
+   "profile": {
+    "persona": "Retiree prioritizing capital preservation",
+    "base_currency": "CAD",
+    "risk_tolerance": "low",
+    "horizon_years": 4,
+    "objective": "capital preservation",
+    "max_single_holding": 0.25
+   },
+   "holdings": [
+    {"ticker": "ZST.TO", "weight": 0.5},
+    {"ticker": "XBB.TO", "weight": 0.35},
+    {"ticker": "GLD", "weight": 0.15}
+   ],
+   "geo_angle": "A defensive bond-heavy portfolio with a gold allocation; interest-rate and gold risks remain."
+  },
+  {
+   "id": "global-tech-growth",
+   "label": "The Taiwan Chokepoint",
+   "profile": {
+    "persona": "Long-horizon technology investor",
+    "base_currency": "USD",
+    "risk_tolerance": "high",
+    "horizon_years": 25,
+    "objective": "growth",
+    "max_single_holding": 0.25
+   },
+   "holdings": [
+    {"ticker": "NVDA", "weight": 0.3},
+    {"ticker": "TSM", "weight": 0.3},
+    {"ticker": "ASML", "weight": 0.25},
+    {"ticker": "MSFT", "weight": 0.1},
+    {"ticker": "BTC", "weight": 0.05}
+   ],
+   "geo_angle": "A concentrated semiconductor supply-chain bet with Taiwan exposure and a small crypto allocation."
+  },
+  {
+   "id": "global-balanced",
+   "label": "The Shock Absorber",
+   "profile": {
+    "persona": "Globally diversified balanced investor",
+    "base_currency": "USD",
+    "risk_tolerance": "moderate",
+    "horizon_years": 12,
+    "objective": "balanced",
+    "max_single_holding": 0.25
+   },
+   "holdings": [
+    {"ticker": "BND", "weight": 0.3},
+    {"ticker": "XBB.TO", "weight": 0.2},
+    {"ticker": "SPY", "weight": 0.2},
+    {"ticker": "VXUS", "weight": 0.2},
+    {"ticker": "GLD", "weight": 0.1}
+   ],
+   "geo_angle": "Bonds, global equities and gold spread exposures across assets and regions."
+  },
+  {
+   "id": "asia-pacific-conviction",
+   "label": "The China Crossfire",
+   "profile": {
+    "persona": "Asia-focused growth investor",
+    "base_currency": "USD",
+    "risk_tolerance": "high",
+    "horizon_years": 15,
+    "objective": "growth",
+    "max_single_holding": 0.25
+   },
+   "holdings": [
+    {"ticker": "BABA", "weight": 0.35},
+    {"ticker": "TCEHY", "weight": 0.3},
+    {"ticker": "JD", "weight": 0.2},
+    {"ticker": "TSM", "weight": 0.15}
+   ],
+   "geo_angle": "Concentrated Chinese platform holdings and Taiwan semiconductor exposure create a distinct regional bet."
+  },
+  {
+   "id": "friendshoring-ex-china",
+   "label": "The China Detour",
+   "profile": {
+    "persona": "Investor seeking supply-chain diversification away from China",
+    "base_currency": "USD",
+    "risk_tolerance": "moderate-high",
+    "horizon_years": 12,
+    "objective": "growth",
+    "max_single_holding": 0.25,
+    "max_country": {
+     "CHN": 0
+    }
+   },
+   "holdings": [
+    {"ticker": "HDB", "weight": 0.25},
+    {"ticker": "AMX", "weight": 0.2},
+    {"ticker": "INFY", "weight": 0.2},
+    {"ticker": "TSM", "weight": 0.2},
+    {"ticker": "SPY", "weight": 0.15}
+   ],
+   "geo_angle": "India and Mexico holdings alongside Taiwan and US exposure; indirect China revenue may remain."
+  },
+  {
+   "id": "resources-real-assets",
+   "label": "The Commodity Supercycle",
+   "profile": {
+    "persona": "Resource-focused investor",
+    "base_currency": "CAD",
+    "risk_tolerance": "high",
+    "horizon_years": 15,
+    "objective": "inflation hedge",
+    "max_single_holding": 0.25
+   },
+   "holdings": [
+    {"ticker": "PBR", "weight": 0.25},
+    {"ticker": "VALE", "weight": 0.25},
+    {"ticker": "CNQ", "weight": 0.2},
+    {"ticker": "XOM", "weight": 0.15},
+    {"ticker": "GLD", "weight": 0.15}
+   ],
+   "geo_angle": "A concentrated oil and mining portfolio exposed to commodity prices and policy across several markets."
+  },
+  {
+   "id": "em-income",
+   "label": "The Yield Trap",
+   "profile": {
+    "persona": "Income investor seeking emerging-market yield",
+    "base_currency": "USD",
+    "risk_tolerance": "moderate-high",
+    "horizon_years": 10,
+    "objective": "income",
+    "max_single_holding": 0.25
+   },
+   "holdings": [
+    {"ticker": "EMB", "weight": 0.35},
+    {"ticker": "VWOB", "weight": 0.3},
+    {"ticker": "EMLC", "weight": 0.25},
+    {"ticker": "GLD", "weight": 0.1}
+   ],
+   "geo_angle": "Emerging-market debt concentration exposes the income strategy to sovereign and currency risks."
+  },
+  {
+   "id": "esg-endowment",
+   "label": "Clean Hands, Tight Limits",
+   "profile": {
+    "persona": "Endowment with explicit exclusions",
+    "base_currency": "USD",
+    "risk_tolerance": "moderate",
+    "horizon_years": 20,
+    "objective": "preserve real value",
+    "max_single_holding": 0.25,
+    "exclusions": [
+     "fossil_fuels",
+     "weapons"
+    ]
+   },
+   "holdings": [
+    {"ticker": "ESGV", "weight": 0.35},
+    {"ticker": "ESGD", "weight": 0.25},
+    {"ticker": "ESGE", "weight": 0.2},
+    {"ticker": "BND", "weight": 0.2}
+   ],
+   "geo_angle": "A global ESG-screened fund mix with exclusions that constrain possible replacements."
+  },
+  {
+   "id": "geopolitical-hedger",
+   "label": "The Gold-Plated Fortress",
+   "profile": {
+    "persona": "Family office focused on capital preservation",
+    "base_currency": "USD",
+    "risk_tolerance": "low-moderate",
+    "horizon_years": 8,
+    "objective": "capital preservation",
+    "max_single_holding": 0.25
+   },
+   "holdings": [
+    {"ticker": "GLD", "weight": 0.35},
+    {"ticker": "TLT", "weight": 0.25},
+    {"ticker": "XBB.TO", "weight": 0.2},
+    {"ticker": "SPY", "weight": 0.2}
+   ],
+   "geo_angle": "A gold-heavy defensive allocation retains interest-rate, gold-price and equity exposure."
+  },
+  {
+   "id": "frontier-latam-africa-gulf",
+   "label": "Frontier Fault Lines",
+   "profile": {
+    "persona": "Tactical frontier-markets investor",
+    "base_currency": "USD",
+    "risk_tolerance": "high",
+    "horizon_years": 10,
+    "objective": "growth",
+    "max_single_holding": 0.25
+   },
+   "holdings": [
+    {"ticker": "KSA", "weight": 0.25},
+    {"ticker": "QAT", "weight": 0.15},
+    {"ticker": "AFK", "weight": 0.2},
+    {"ticker": "PBR", "weight": 0.2},
+    {"ticker": "MTNOY", "weight": 0.2}
+   ],
+   "geo_angle": "A concentrated Gulf, African and Brazilian mix with distinct commodity and regional exposures."
+  }
+ ],
+ "legacy_portfolios": [
+  {
+   "id": "qc-retiree-income",
+   "label": "Quebec retiree, global dividends",
+   "profile": {
+    "persona": "Retired teacher, Quebec, 67",
+    "base_currency": "CAD",
+    "risk_tolerance": "low",
+    "horizon_years": 10,
+    "objective": "income",
+    "max_em": 0.3,
+    "max_single_holding": 0.15
+   },
+   "holdings": [
+    {"ticker": "RY", "weight": 0.0625},
+    {"ticker": "TD", "weight": 0.0521},
+    {"ticker": "ENB", "weight": 0.0625},
+    {"ticker": "FTS", "weight": 0.0521},
+    {"ticker": "CNI", "weight": 0.0417},
+    {"ticker": "MFC", "weight": 0.0312},
+    {"ticker": "SHEL", "weight": 0.0312},
+    {"ticker": "UL", "weight": 0.0312},
+    {"ticker": "NVS", "weight": 0.0312},
+    {"ticker": "TTE", "weight": 0.0208},
+    {"ticker": "SNY", "weight": 0.0208},
+    {"ticker": "TM", "weight": 0.0312},
+    {"ticker": "MUFG", "weight": 0.0208},
+    {"ticker": "KB", "weight": 0.0208},
+    {"ticker": "SKM", "weight": 0.0208},
+    {"ticker": "CHT", "weight": 0.0208},
+    {"ticker": "TLK", "weight": 0.0208},
+    {"ticker": "AMX", "weight": 0.0208},
+    {"ticker": "ITUB", "weight": 0.0208},
+    {"ticker": "BAP", "weight": 0.0208},
+    {"ticker": "BCH", "weight": 0.0208},
+    {"ticker": "GFI", "weight": 0.0208},
+    {"ticker": "MTNOY", "weight": 0.0104},
+    {"ticker": "TKC", "weight": 0.0104},
+    {"ticker": "ZST", "weight": 0.1256},
+    {"ticker": "VWOB", "weight": 0.0625},
+    {"ticker": "TLT", "weight": 0.0625},
+    {"ticker": "GLD", "weight": 0.0521}
+   ],
+   "geo_angle": "Dividend payers on every continent; Canadian core still dominates. EM income via Korean telcos/banks, Telkom, America Movil, Itaú, MTN.",
+   "scenarios": [
+    {
+     "name": "US-Canada tariff escalation",
+     "countries": [
+      "USA",
+      "CAN"
+     ]
+    },
+    {
+     "name": "Strong-USD EM sell-off",
+     "countries": [
+      "BRA",
+      "MEX",
+      "ZAF",
+      "IDN",
+      "TUR"
+     ]
+    }
+   ]
+  },
+  {
+   "id": "global-tech-growth",
+   "label": "Young investor, global tech",
+   "profile": {
+    "persona": "Software engineer, Seattle, 29",
+    "base_currency": "USD",
+    "risk_tolerance": "high",
+    "horizon_years": 30,
+    "objective": "growth",
+    "max_em": 0.45,
+    "max_single_holding": 0.12
+   },
+   "holdings": [
+    {"ticker": "NVDA", "weight": 0.1093},
+    {"ticker": "MSFT", "weight": 0.0659},
+    {"ticker": "ASML", "weight": 0.0659},
+    {"ticker": "SAP", "weight": 0.044},
+    {"ticker": "ERIC", "weight": 0.022},
+    {"ticker": "NOK", "weight": 0.022},
+    {"ticker": "TSM", "weight": 0.0989},
+    {"ticker": "UMC", "weight": 0.022},
+    {"ticker": "ASX", "weight": 0.033},
+    {"ticker": "SONY", "weight": 0.044},
+    {"ticker": "CPNG", "weight": 0.033},
+    {"ticker": "SE", "weight": 0.033},
+    {"ticker": "GRAB", "weight": 0.022},
+    {"ticker": "INFY", "weight": 0.033},
+    {"ticker": "WIT", "weight": 0.022},
+    {"ticker": "MMYT", "weight": 0.022},
+    {"ticker": "BABA", "weight": 0.033},
+    {"ticker": "TCEHY", "weight": 0.033},
+    {"ticker": "BIDU", "weight": 0.022},
+    {"ticker": "MELI", "weight": 0.044},
+    {"ticker": "NU", "weight": 0.033},
+    {"ticker": "CHKP", "weight": 0.022},
+    {"ticker": "NICE", "weight": 0.022},
+    {"ticker": "JMIA", "weight": 0.011},
+    {"ticker": "NPSNY", "weight": 0.022},
+    {"ticker": "SHOP", "weight": 0.033},
+    {"ticker": "BTC", "weight": 0.033}
+   ],
+   "geo_angle": "Semiconductor chain (USA-NLD-TWN), Chinese platforms, Israeli cyber, LatAm/SE-Asia/African fintech and e-commerce.",
+   "scenarios": [
+    {
+     "name": "Taiwan Strait blockade",
+     "countries": [
+      "TWN",
+      "CHN"
+     ]
+    },
+    {
+     "name": "Expanded chip export controls",
+     "countries": [
+      "CHN",
+      "NLD",
+      "KOR",
+      "USA"
+     ]
+    }
+   ]
+  },
+  {
+   "id": "global-balanced",
+   "label": "Vanguard core + global satellites",
+   "profile": {
+    "persona": "Mid-career nurse, Ohio, 41",
+    "base_currency": "USD",
+    "risk_tolerance": "moderate",
+    "horizon_years": 20,
+    "objective": "balanced",
+    "max_em": 0.25,
+    "max_single_holding": 0.3
+   },
+   "holdings": [
+    {"ticker": "VTI", "weight": 0.3},
+    {"ticker": "VXUS", "weight": 0.12},
+    {"ticker": "VWO", "weight": 0.06},
+    {"ticker": "BND", "weight": 0.2},
+    {"ticker": "VWOB", "weight": 0.04},
+    {"ticker": "TM", "weight": 0.02},
+    {"ticker": "SONY", "weight": 0.02},
+    {"ticker": "AZN", "weight": 0.02},
+    {"ticker": "NVO", "weight": 0.02},
+    {"ticker": "SAP", "weight": 0.02},
+    {"ticker": "TSM", "weight": 0.02},
+    {"ticker": "SHG", "weight": 0.02},
+    {"ticker": "HDB", "weight": 0.02},
+    {"ticker": "ITUB", "weight": 0.02},
+    {"ticker": "AMX", "weight": 0.02},
+    {"ticker": "GFI", "weight": 0.02},
+    {"ticker": "TEVA", "weight": 0.01},
+    {"ticker": "BHP", "weight": 0.02},
+    {"ticker": "SQM", "weight": 0.01},
+    {"ticker": "TLK", "weight": 0.01},
+    {"ticker": "YUMC", "weight": 0.01}
+   ],
+   "geo_angle": "Index core with one or two names per region so the per-country look-through is readable.",
+   "scenarios": [
+    {
+     "name": "Russia-NATO escalation",
+     "countries": [
+      "RUS",
+      "POL",
+      "DEU",
+      "FIN"
+     ]
+    },
+    {
+     "name": "US-China decoupling",
+     "countries": [
+      "CHN",
+      "HKG",
+      "USA"
+     ]
+    }
+   ]
+  },
+  {
+   "id": "asia-pacific-conviction",
+   "label": "Asia-Pacific conviction",
+   "profile": {
+    "persona": "Asia-focused portfolio manager, Vancouver, 36",
+    "base_currency": "USD",
+    "risk_tolerance": "high",
+    "horizon_years": 7,
+    "objective": "growth",
+    "max_em": 0.8,
+    "max_single_holding": 0.08
+   },
+   "holdings": [
+    {"ticker": "TM", "weight": 0.043},
+    {"ticker": "SONY", "weight": 0.043},
+    {"ticker": "MUFG", "weight": 0.0323},
+    {"ticker": "TAK", "weight": 0.0215},
+    {"ticker": "IX", "weight": 0.0215},
+    {"ticker": "KB", "weight": 0.0323},
+    {"ticker": "SHG", "weight": 0.0323},
+    {"ticker": "PKX", "weight": 0.0323},
+    {"ticker": "SKM", "weight": 0.0215},
+    {"ticker": "CPNG", "weight": 0.0323},
+    {"ticker": "TSM", "weight": 0.0642},
+    {"ticker": "UMC", "weight": 0.0215},
+    {"ticker": "CHT", "weight": 0.0215},
+    {"ticker": "BABA", "weight": 0.043},
+    {"ticker": "JD", "weight": 0.0323},
+    {"ticker": "PDD", "weight": 0.0323},
+    {"ticker": "TCEHY", "weight": 0.043},
+    {"ticker": "TCOM", "weight": 0.0215},
+    {"ticker": "YUMC", "weight": 0.0215},
+    {"ticker": "LI", "weight": 0.0215},
+    {"ticker": "HSBC", "weight": 0.0323},
+    {"ticker": "HDB", "weight": 0.043},
+    {"ticker": "IBN", "weight": 0.0323},
+    {"ticker": "INFY", "weight": 0.0323},
+    {"ticker": "RDY", "weight": 0.0215},
+    {"ticker": "TLK", "weight": 0.0215},
+    {"ticker": "PHI", "weight": 0.0215},
+    {"ticker": "SE", "weight": 0.0215},
+    {"ticker": "GRAB", "weight": 0.0215},
+    {"ticker": "BHP", "weight": 0.0323},
+    {"ticker": "RIO", "weight": 0.0215},
+    {"ticker": "NPSNY", "weight": 0.0215},
+    {"ticker": "SPY", "weight": 0.043}
+   ],
+   "geo_angle": "Japan, Korea, Taiwan, China, India, Indonesia, Philippines, Australia. Korean peninsula, Taiwan, China ADR and India-Pakistan risks.",
+   "scenarios": [
+    {
+     "name": "Korean peninsula crisis",
+     "countries": [
+      "KOR",
+      "PRK",
+      "JPN"
+     ]
+    },
+    {
+     "name": "US-China decoupling / ADR delisting",
+     "countries": [
+      "CHN",
+      "HKG",
+      "USA"
+     ]
+    }
+   ]
+  },
+  {
+   "id": "friendshoring-ex-china",
+   "label": "Friend-shoring, zero China",
+   "profile": {
+    "persona": "Corporate lawyer, Toronto, 45",
+    "base_currency": "USD",
+    "risk_tolerance": "moderate",
+    "horizon_years": 15,
+    "objective": "growth",
+    "max_em": 0.65,
+    "max_country": {
+     "CHN": 0.0
+    },
+    "max_single_holding": 0.2
+   },
+   "holdings": [
+    {"ticker": "SPY", "weight": 0.164},
+    {"ticker": "HDB", "weight": 0.044},
+    {"ticker": "IBN", "weight": 0.033},
+    {"ticker": "INFY", "weight": 0.033},
+    {"ticker": "RDY", "weight": 0.022},
+    {"ticker": "MMYT", "weight": 0.022},
+    {"ticker": "AMX", "weight": 0.033},
+    {"ticker": "FMX", "weight": 0.033},
+    {"ticker": "CX", "weight": 0.033},
+    {"ticker": "ASR", "weight": 0.033},
+    {"ticker": "KOF", "weight": 0.022},
+    {"ticker": "TSM", "weight": 0.044},
+    {"ticker": "ASX", "weight": 0.022},
+    {"ticker": "KB", "weight": 0.033},
+    {"ticker": "SHG", "weight": 0.022},
+    {"ticker": "TM", "weight": 0.033},
+    {"ticker": "SMFG", "weight": 0.033},
+    {"ticker": "HMC", "weight": 0.022},
+    {"ticker": "TLK", "weight": 0.022},
+    {"ticker": "PHI", "weight": 0.022},
+    {"ticker": "GRAB", "weight": 0.022},
+    {"ticker": "BBVA", "weight": 0.033},
+    {"ticker": "SAN", "weight": 0.033},
+    {"ticker": "ITUB", "weight": 0.022},
+    {"ticker": "NU", "weight": 0.022},
+    {"ticker": "BAP", "weight": 0.022},
+    {"ticker": "ESLT", "weight": 0.022},
+    {"ticker": "CHKP", "weight": 0.022},
+    {"ticker": "EPOL", "weight": 0.033},
+    {"ticker": "GFI", "weight": 0.022},
+    {"ticker": "MTNOY", "weight": 0.022}
+   ],
+   "geo_angle": "No Chinese issuers; bets on Mexico/India/ASEAN/Poland as supply-chain beneficiaries. Exposed to US tariffs on MEX/IND and Taiwan.",
+   "scenarios": [
+    {
+     "name": "USMCA review breakdown / tariffs on Mexico",
+     "countries": [
+      "MEX",
+      "USA"
+     ]
+    },
+    {
+     "name": "India-Pakistan military escalation",
+     "countries": [
+      "IND",
+      "PAK"
+     ]
+    }
+   ]
+  },
+  {
+   "id": "resources-real-assets",
+   "label": "Energy & mining, Alberta",
+   "profile": {
+    "persona": "Oil & gas executive, Calgary, 52",
+    "base_currency": "CAD",
+    "risk_tolerance": "moderate-high",
+    "horizon_years": 12,
+    "objective": "inflation hedge",
+    "max_em": 0.45,
+    "max_single_holding": 0.1
+   },
+   "holdings": [
+    {"ticker": "CNQ", "weight": 0.069},
+    {"ticker": "ENB", "weight": 0.046},
+    {"ticker": "XOM", "weight": 0.046},
+    {"ticker": "TECK", "weight": 0.0345},
+    {"ticker": "B", "weight": 0.046},
+    {"ticker": "IVN.TO", "weight": 0.0345},
+    {"ticker": "FM.TO", "weight": 0.023},
+    {"ticker": "EDV.TO", "weight": 0.0345},
+    {"ticker": "AU", "weight": 0.0345},
+    {"ticker": "GFI", "weight": 0.0345},
+    {"ticker": "SBSW", "weight": 0.023},
+    {"ticker": "HMY", "weight": 0.023},
+    {"ticker": "VALE", "weight": 0.0345},
+    {"ticker": "PBR", "weight": 0.0345},
+    {"ticker": "SCCO", "weight": 0.0345},
+    {"ticker": "BVN", "weight": 0.023},
+    {"ticker": "SQM", "weight": 0.023},
+    {"ticker": "YPF", "weight": 0.023},
+    {"ticker": "VIST", "weight": 0.023},
+    {"ticker": "EC", "weight": 0.023},
+    {"ticker": "EQNR", "weight": 0.0345},
+    {"ticker": "SHEL", "weight": 0.0345},
+    {"ticker": "TTE", "weight": 0.023},
+    {"ticker": "E", "weight": 0.023},
+    {"ticker": "BHP", "weight": 0.0345},
+    {"ticker": "RIO", "weight": 0.0345},
+    {"ticker": "PKX", "weight": 0.023},
+    {"ticker": "URA", "weight": 0.0345},
+    {"ticker": "GLD", "weight": 0.0915}
+   ],
+   "geo_angle": "Mines and wells in DRC, Zambia, Sahel, Ghana, South Africa, Peru, Chile, Argentina, Colombia, North Sea. Resource nationalism, coups, sanctions.",
+   "scenarios": [
+    {
+     "name": "Strait of Hormuz closure",
+     "countries": [
+      "IRN",
+      "SAU",
+      "ARE",
+      "QAT"
+     ]
+    },
+    {
+     "name": "Sahel / Central Africa instability",
+     "countries": [
+      "MLI",
+      "BFA",
+      "COD",
+      "ZMB"
+     ]
+    }
+   ]
+  },
+  {
+   "id": "em-income",
+   "label": "EM debt + EM dividend income",
+   "profile": {
+    "persona": "Pre-retiree, Miami, 58",
+    "base_currency": "USD",
+    "risk_tolerance": "moderate",
+    "horizon_years": 8,
+    "objective": "income",
+    "max_em": 0.85,
+    "max_single_holding": 0.15
+   },
+   "holdings": [
+    {"ticker": "EMB", "weight": 0.1466},
+    {"ticker": "VWOB", "weight": 0.1042},
+    {"ticker": "EMLC", "weight": 0.1042},
+    {"ticker": "TLT", "weight": 0.0833},
+    {"ticker": "ITUB", "weight": 0.0312},
+    {"ticker": "BBD", "weight": 0.0208},
+    {"ticker": "ABEV", "weight": 0.0208},
+    {"ticker": "BCH", "weight": 0.0312},
+    {"ticker": "BAP", "weight": 0.0312},
+    {"ticker": "CIB", "weight": 0.0208},
+    {"ticker": "EC", "weight": 0.0208},
+    {"ticker": "AMX", "weight": 0.0312},
+    {"ticker": "KOF", "weight": 0.0208},
+    {"ticker": "PAM", "weight": 0.0208},
+    {"ticker": "TLK", "weight": 0.0312},
+    {"ticker": "PHI", "weight": 0.0208},
+    {"ticker": "CHT", "weight": 0.0312},
+    {"ticker": "SKM", "weight": 0.0208},
+    {"ticker": "KT", "weight": 0.0208},
+    {"ticker": "TKC", "weight": 0.0208},
+    {"ticker": "GFI", "weight": 0.0208},
+    {"ticker": "MTNOY", "weight": 0.0208},
+    {"ticker": "KSA", "weight": 0.0312},
+    {"ticker": "QAT", "weight": 0.0208},
+    {"ticker": "GLD", "weight": 0.0729}
+   ],
+   "geo_angle": "Sovereign credit + local FX + high-dividend banks/telcos from Brazil to Taiwan to Turkey. fx_capital_controls and financial_stress channels.",
+   "scenarios": [
+    {
+     "name": "Argentina / Colombia fiscal crisis",
+     "countries": [
+      "ARG",
+      "COL"
+     ]
+    },
+    {
+     "name": "Turkey lira crash + capital controls",
+     "countries": [
+      "TUR"
+     ]
+    }
+   ]
+  },
+  {
+   "id": "esg-endowment",
+   "label": "ESG university endowment",
+   "profile": {
+    "persona": "University foundation, Montreal (institutional)",
+    "base_currency": "CAD",
+    "risk_tolerance": "moderate",
+    "horizon_years": 50,
+    "objective": "preserve real value",
+    "max_em": 0.3,
+    "max_single_holding": 0.2,
+    "exclusions": [
+     "fossil_fuels",
+     "weapons",
+     "sanctioned_jurisdictions"
+    ]
+   },
+   "holdings": [
+    {"ticker": "ESGV", "weight": 0.184},
+    {"ticker": "ESGD", "weight": 0.0816},
+    {"ticker": "ESGE", "weight": 0.0816},
+    {"ticker": "MSFT", "weight": 0.0306},
+    {"ticker": "SHOP", "weight": 0.0204},
+    {"ticker": "CSU", "weight": 0.0204},
+    {"ticker": "NVO", "weight": 0.0306},
+    {"ticker": "SAP", "weight": 0.0306},
+    {"ticker": "ASML", "weight": 0.0306},
+    {"ticker": "UL", "weight": 0.0204},
+    {"ticker": "SNY", "weight": 0.0204},
+    {"ticker": "ING", "weight": 0.0204},
+    {"ticker": "NOK", "weight": 0.0204},
+    {"ticker": "SONY", "weight": 0.0204},
+    {"ticker": "TAK", "weight": 0.0204},
+    {"ticker": "SHG", "weight": 0.0204},
+    {"ticker": "KB", "weight": 0.0204},
+    {"ticker": "TSM", "weight": 0.0204},
+    {"ticker": "HDB", "weight": 0.0306},
+    {"ticker": "INFY", "weight": 0.0204},
+    {"ticker": "NU", "weight": 0.0204},
+    {"ticker": "MELI", "weight": 0.0204},
+    {"ticker": "SBS", "weight": 0.0204},
+    {"ticker": "AFK", "weight": 0.0204},
+    {"ticker": "TLT", "weight": 0.102},
+    {"ticker": "ZST", "weight": 0.0408},
+    {"ticker": "GLD", "weight": 0.0306}
+   ],
+   "geo_angle": "Exclusions limit remediation (no defense/energy hedges). Europe, Japan, Korea, India, Brazil, Africa via ESG-screened names.",
+   "scenarios": [
+    {
+     "name": "Taiwan Strait blockade",
+     "countries": [
+      "TWN",
+      "CHN"
+     ]
+    },
+    {
+     "name": "EU-US trade war",
+     "countries": [
+      "DEU",
+      "FRA",
+      "NLD",
+      "DNK",
+      "USA"
+     ]
+    }
+   ]
+  },
+  {
+   "id": "geopolitical-hedger",
+   "label": "Family office, explicit geo hedge",
+   "profile": {
+    "persona": "Family office, New York",
+    "base_currency": "USD",
+    "risk_tolerance": "low-moderate",
+    "horizon_years": 15,
+    "objective": "capital preservation",
+    "max_em": 0.2,
+    "max_single_holding": 0.16
+   },
+   "holdings": [
+    {"ticker": "SPY", "weight": 0.1503},
+    {"ticker": "GLD", "weight": 0.1505},
+    {"ticker": "TLT", "weight": 0.1075},
+    {"ticker": "ITA", "weight": 0.0538},
+    {"ticker": "LMT", "weight": 0.0323},
+    {"ticker": "RTX", "weight": 0.0323},
+    {"ticker": "BAESY", "weight": 0.0323},
+    {"ticker": "RNMBY", "weight": 0.0323},
+    {"ticker": "ESLT", "weight": 0.0215},
+    {"ticker": "XOM", "weight": 0.0323},
+    {"ticker": "SHEL", "weight": 0.0215},
+    {"ticker": "EQNR", "weight": 0.0215},
+    {"ticker": "B", "weight": 0.0323},
+    {"ticker": "AU", "weight": 0.0215},
+    {"ticker": "GFI", "weight": 0.0215},
+    {"ticker": "CHKP", "weight": 0.0215},
+    {"ticker": "TM", "weight": 0.0323},
+    {"ticker": "MUFG", "weight": 0.0215},
+    {"ticker": "KB", "weight": 0.0215},
+    {"ticker": "PKX", "weight": 0.0215},
+    {"ticker": "TSM", "weight": 0.0215},
+    {"ticker": "HDB", "weight": 0.0215},
+    {"ticker": "AMX", "weight": 0.0215},
+    {"ticker": "ITUB", "weight": 0.0215},
+    {"ticker": "BTC", "weight": 0.0323}
+   ],
+   "geo_angle": "Positive-GPR-beta assets (gold, US/European/Israeli defense, energy) + diversified global equity. Tests exposure vs vulnerability.",
+   "scenarios": [
+    {
+     "name": "Russia-NATO escalation",
+     "countries": [
+      "RUS",
+      "POL",
+      "LTU",
+      "FIN",
+      "DEU"
+     ]
+    },
+    {
+     "name": "Middle East regional war",
+     "countries": [
+      "ISR",
+      "IRN",
+      "SAU"
+     ]
+    }
+   ]
+  },
+  {
+   "id": "frontier-latam-africa-gulf",
+   "label": "LatAm, Africa & Gulf tactical",
+   "profile": {
+    "persona": "EM trader, Miami, 38",
+    "base_currency": "USD",
+    "risk_tolerance": "high",
+    "horizon_years": 5,
+    "objective": "growth",
+    "max_em": 0.95,
+    "max_single_holding": 0.06
+   },
+   "holdings": [
+    {"ticker": "ITUB", "weight": 0.037},
+    {"ticker": "NU", "weight": 0.037},
+    {"ticker": "PBR", "weight": 0.037},
+    {"ticker": "VALE", "weight": 0.037},
+    {"ticker": "ABEV", "weight": 0.0247},
+    {"ticker": "SBS", "weight": 0.0247},
+    {"ticker": "AMX", "weight": 0.037},
+    {"ticker": "FMX", "weight": 0.037},
+    {"ticker": "CX", "weight": 0.0247},
+    {"ticker": "ASR", "weight": 0.0247},
+    {"ticker": "YPF", "weight": 0.037},
+    {"ticker": "GGAL", "weight": 0.037},
+    {"ticker": "VIST", "weight": 0.0247},
+    {"ticker": "MELI", "weight": 0.0497},
+    {"ticker": "BAP", "weight": 0.0247},
+    {"ticker": "SCCO", "weight": 0.0247},
+    {"ticker": "SQM", "weight": 0.0247},
+    {"ticker": "BCH", "weight": 0.0247},
+    {"ticker": "EC", "weight": 0.0247},
+    {"ticker": "CIB", "weight": 0.0247},
+    {"ticker": "KSA", "weight": 0.0494},
+    {"ticker": "UAE", "weight": 0.037},
+    {"ticker": "QAT", "weight": 0.0247},
+    {"ticker": "TKC", "weight": 0.0247},
+    {"ticker": "EZA", "weight": 0.037},
+    {"ticker": "NPSNY", "weight": 0.0247},
+    {"ticker": "MTNOY", "weight": 0.0247},
+    {"ticker": "GFI", "weight": 0.0247},
+    {"ticker": "JMIA", "weight": 0.0123},
+    {"ticker": "AFK", "weight": 0.037},
+    {"ticker": "KB", "weight": 0.0247},
+    {"ticker": "TLK", "weight": 0.0247},
+    {"ticker": "GLD", "weight": 0.037}
+   ],
+   "geo_angle": "Elections and FX in BRA/ARG/MEX/COL/CHL/PER, Gulf conflict and oil, African telcos/miners. Low China/Taiwan: contrast to tech portfolios.",
+   "scenarios": [
+    {
+     "name": "Strait of Hormuz closure",
+     "countries": [
+      "IRN",
+      "SAU",
+      "ARE",
+      "QAT"
+     ]
+    },
+    {
+     "name": "US tariffs on Mexico + Argentina FX crisis",
+     "countries": [
+      "MEX",
+      "ARG",
+      "USA"
+     ]
+    }
+   ]
+  }
+ ]
+}

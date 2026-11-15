@@ -1,5 +1,25 @@
 {
  "_doc": "Sample portfolios, North American investor POV. Countries ISO3. 'country' = domicile/home market; 'ops' = main operating countries when different; ETFs: 'primary_countries' is a qualitative look-through hint (use issuer holdings files for weights). Tickers are US/TSX/OTC listings checked as of mid-2026; verify at as_of.",
+ "showcase_portfolios": [
+  {
+    "id": "showcase-canada", "label": "Canada Concentration",
+    "profile": {"persona": "Cautious retiree prioritizing capital preservation", "base_currency": "CAD", "risk_tolerance": "low", "horizon_years": 4, "objective": "capital preservation", "max_single_holding": 0.25},
+   "holdings": [{"ticker": "ZST.TO", "weight": 0.50}, {"ticker": "XBB.TO", "weight": 0.35}, {"ticker": "GLD", "weight": 0.15}],
+    "geo_angle": "Canadian bond funds dominate this portfolio; its high concern in the tested run reflects the cautious investor profile, not a claim that the bonds are inherently high risk."
+  },
+  {
+    "id": "showcase-balanced", "label": "The Shock Absorber",
+   "profile": {"persona": "Globally diversified balanced investor", "base_currency": "USD", "risk_tolerance": "moderate", "horizon_years": 12, "objective": "balanced", "max_single_holding": 0.25},
+   "holdings": [{"ticker": "BND", "weight": 0.30}, {"ticker": "XBB.TO", "weight": 0.20}, {"ticker": "SPY", "weight": 0.20}, {"ticker": "VXUS", "weight": 0.20}, {"ticker": "GLD", "weight": 0.10}],
+   "geo_angle": "Bonds, global equities and gold spread exposures across assets and regions."
+  },
+    {
+    "id": "showcase-gold", "label": "The Gold-Plated Fortress",
+     "profile": {"persona": "Balanced-tolerance family office focused on capital preservation", "base_currency": "USD", "risk_tolerance": "moderate", "horizon_years": 8, "objective": "capital preservation", "max_single_holding": 0.25},
+   "holdings": [{"ticker": "GLD", "weight": 0.35}, {"ticker": "TLT", "weight": 0.25}, {"ticker": "XBB.TO", "weight": 0.20}, {"ticker": "SPY", "weight": 0.20}],
+   "geo_angle": "A gold-heavy defensive allocation retains interest-rate, gold-price and equity exposure."
+  }
+ ],
  "regions": {
   "North America": [
    "USA",

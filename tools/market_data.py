@@ -51,7 +51,7 @@ def _sec_get(url: str) -> httpx.Response:
 
 
 def get_price_history(ticker: str, as_of: str, lookback_days: int = 90) -> dict[str, Any]:
-    """Fetch adjusted daily Yahoo Finance prices, cached in S3 for 24 hours."""
+    """Fetch adjusted daily Yahoo Finance prices, cached (a month for a past window, else 24 hours)."""
     _validate_ticker(ticker)
     end = date.fromisoformat(as_of)
     if end > date.today() or not 1 <= lookback_days <= 3660:
@@ -80,7 +80,10 @@ def get_price_history(ticker: str, as_of: str, lookback_days: int = 90) -> dict[
         return MarketSeries(name=ticker, unit=currency, observations=observations,
                             source=source).model_dump(mode="json")
 
-    return cached("prices", {"ticker": ticker, "as_of": as_of, "days": lookback_days}, fetch)
+    # A window ending more than a week ago is history: kept a month (adjusted closes only move with later
+    # dividends/splits). A recent window is refreshed daily.
+    hours = 24 * 30 if end < date.today() - timedelta(days=7) else 24
+    return cached("prices", {"ticker": ticker, "as_of": as_of, "days": lookback_days}, fetch, hours=hours)
 
 
 def _ticker_map() -> dict[str, Any]:

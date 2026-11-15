@@ -1,0 +1,504 @@
+diff -ruN a/.env.example b/.env.example
+--- a/.env.example	2026-11-15 15:30:42.496426729 -0500
++++ b/.env.example	2026-11-15 15:30:42.498045875 -0500
+@@ -17,3 +17,6 @@
+ REPLAY_GAP_S=0.08         # replay: minimum time between two progress lines (s)
+ REPLAY_HOLD_S=0.9         # replay: each holding / company / country stays "in progress" 1-2x this (s)
+ REPLAY_MAX_S=20           # replay: the original timeline is sped up to fit this (s), before the pauses above
++# Vercel (see DEPLOY.md): set automatically there. STREAM_RUNS=1 runs each new analysis inside one streamed request.
++# STREAM_RUNS=0
++# DATA_DIR=data
+diff -ruN a/.python-version b/.python-version
+--- a/.python-version	1969-12-31 19:00:00.000000000 -0500
++++ b/.python-version	2026-11-15 15:30:42.519850145 -0500
+@@ -0,0 +1 @@
++3.13
+diff -ruN a/.vercelignore b/.vercelignore
+--- a/.vercelignore	1969-12-31 19:00:00.000000000 -0500
++++ b/.vercelignore	2026-11-15 15:30:42.514612188 -0500
+@@ -0,0 +1,14 @@
++# Secrets: never uploaded. Set them in the Vercel project instead (Settings > Environment Variables).
++.env
++.env.*
++!.env.example
++# Not needed at runtime
++.venv
++venv
++tests
++outputs
++.pytest_cache
++**/__pycache__
++data/traces
++*.zip
++*.patch
+diff -ruN a/CLAUDE.md b/CLAUDE.md
+--- a/CLAUDE.md	2026-11-15 15:30:42.503465633 -0500
++++ b/CLAUDE.md	2026-11-15 15:30:42.504706922 -0500
+@@ -32,7 +32,8 @@
+ python -m agents.source_agent CAN
+ ```
+ 
+-`data/` is gitignored: caches, run state, traces.
++`data/` is gitignored: caches, run state, traces (`DATA_DIR`; on Vercel `/tmp/data`, seeded from the deployed
++`data/`; see DEPLOY.md).
+ 
+ Agent answers are saved in `data/agent-cache/` (`core/llm.ask`: exact input incl. model and system prompt;
+ country notes and drivers: per country), so a rerun or a portfolio sharing countries skips those calls. Filings
+diff -ruN a/DEPLOY.md b/DEPLOY.md
+--- a/DEPLOY.md	1969-12-31 19:00:00.000000000 -0500
++++ b/DEPLOY.md	2026-11-15 15:30:42.509394702 -0500
+@@ -0,0 +1,48 @@
++# Deploying to Vercel (demo from cache)
++
++The deployment ships the local `data/` folder (caches and finished runs) with the code. Portfolios already analysed
++locally replay instantly; new analyses run inside one streamed request and reuse every cached company and country.
++
++## How it differs from a local server
++
++| | Local (`uvicorn`) | Vercel |
++|---|---|---|
++| Data | `./data` | `data/` shipped with the deploy, copied to `/tmp/data` per instance (`core/config.py`) |
++| New analysis | background task, page polls `/runs/<id>/events` | runs inside `POST /runs/stream`, progress streamed (`STREAM_RUNS=1`) |
++| Filing deadlines | none (reads everything to the end) | 45 s filings / 60 s filing text (a request stops after 300 s on Hobby) |
++| What a run saves | kept | kept on that instance only, lost on redeploy or a cold start |
++
++## 1. Fill the cache locally
++
++With the patches applied, run each portfolio you want to demo once through the local app (same profile settings you
++will use in the demo), until it replays on the second submit. Only runs made after `run-cache.patch` are indexed for
++reuse (`data/runs/index/`).
++
++## 2. Deploy with the CLI (not Git)
++
++`data/` is gitignored, so a Git deployment would ship no cache. The CLI uploads the folder on disk; `.vercelignore`
++keeps `.env`, tests and traces out.
++
++```bash
++npm i -g vercel                 # CLI >= 54.17.2 for --dry
++vercel link                     # once, from polyfinances-datathon/
++vercel deploy --dry             # check: data/ included, no .env, total well under 500 MB
++vercel env add SEC_IDENTITY     # "Your Name you@domain.com"
++vercel env add AWS_ACCESS_KEY_ID
++vercel env add AWS_SECRET_ACCESS_KEY
++vercel env add AWS_SESSION_TOKEN   # only for temporary credentials; they expire, update before the demo
++vercel env add AWS_REGION
++vercel env add BEDROCK_MODEL_ID    # if not the default
++vercel deploy --prod
++```
++
++Dependencies are ~410 MB (pyarrow, pulled in by edgartools, is 165 MB) plus ~30 MB of cache: under the 500 MB Python
++limit, without much room. Keep `data/traces` out (already in `.vercelignore`).
++
++## Limits of the demo
++
++- A new analysis must finish in 300 s. Companies not read within the deadlines count as unknown for that run.
++- New runs and new cache entries live on one instance's `/tmp`: another instance or a redeploy does not see them.
++  To make them permanent, run the analysis locally and redeploy.
++- "Refresh scenarios" on a report starts a background job: unreliable on Vercel.
++- For a fully live deployment, set `STORAGE=s3` (caches in S3) and move run state off local disk.
+diff -ruN a/core/config.py b/core/config.py
+--- a/core/config.py	2026-11-15 15:30:42.538168127 -0500
++++ b/core/config.py	2026-11-15 15:30:42.539461205 -0500
+@@ -1,6 +1,8 @@
+ """All settings, read once from the environment (.env is loaded here). See .env.example."""
+ import os
+ import re
++import shutil
++from pathlib import Path
+ 
+ try:
+     from dotenv import load_dotenv
+@@ -8,6 +10,20 @@
+ except ImportError:
+     pass
+ 
++# ---------- where data lives ----------
++# Locally: ./data. On Vercel (VERCEL is set by the platform) the deployed files are read-only and /tmp is the only
++# writable, per-instance disk: the data/ folder shipped with the deployment (the caches and finished runs) is copied
++# there once per instance, and new runs and cache entries are written there. DATA_DIR overrides both.
++ON_VERCEL = bool(os.environ.get("VERCEL"))
++BUNDLED_DATA = Path(__file__).resolve().parent.parent / "data"
++DATA_DIR = Path(os.environ.get("DATA_DIR") or ("/tmp/data" if ON_VERCEL else "data"))
++if ON_VERCEL and BUNDLED_DATA.is_dir() and not (DATA_DIR / ".seeded").exists():
++    shutil.copytree(BUNDLED_DATA, DATA_DIR, dirs_exist_ok=True, ignore=shutil.ignore_patterns("traces", "*.tmp"))
++    (DATA_DIR / ".seeded").touch()
++# A new analysis runs inside one streamed request (progress, then the report) instead of a background task polled by
++# the page: serverless instances do not share memory or disk, and may stop work once a response is sent.
++STREAM_RUNS = os.environ.get("STREAM_RUNS", "1" if ON_VERCEL else "0") == "1"
++
+ REGION = os.environ.get("AWS_REGION") or os.environ.get("AWS_DEFAULT_REGION", "us-east-1")
+ BEDROCK_MODEL_ID = os.environ.get("BEDROCK_MODEL_ID", "global.anthropic.claude-sonnet-5-5")
+ SCENARIO_MODEL_ID = os.environ.get("SCENARIO_MODEL_ID", BEDROCK_MODEL_ID)
+@@ -38,8 +54,9 @@
+ # Deadlines for reading a company's filing. 0 (default) = no deadline: a run reads and saves everything it has not
+ # seen yet, so the next run that needs the same company finds it saved. A positive value caps the wait; what is not
+ # read by then finishes in the background (saved only if the server is still running).
+-FILINGS_WAIT_S = float(os.environ.get("FILINGS_WAIT_S", "0")) or None       # filings agents, per run
+-EXPOSURE_TEXT_WAIT_S = float(os.environ.get("EXPOSURE_TEXT_WAIT_S", "0")) or None   # filing-text pass, per holding
++# On Vercel a request stops after 300 s (Hobby), so deadlines are on by default there.
++FILINGS_WAIT_S = float(os.environ.get("FILINGS_WAIT_S", "45" if ON_VERCEL else "0")) or None       # filings agents, per run
++EXPOSURE_TEXT_WAIT_S = float(os.environ.get("EXPOSURE_TEXT_WAIT_S", "60" if ON_VERCEL else "0")) or None   # filing-text pass
+ 
+ # Agent answers are saved and reused when the exact same input comes back (core/llm.ask, per-country notes and
+ # drivers). Keys include the model, the system prompt and the input, so changing any of them refreshes the answer.
+diff -ruN a/core/llm.py b/core/llm.py
+--- a/core/llm.py	2026-11-15 15:30:42.551961147 -0500
++++ b/core/llm.py	2026-11-15 15:30:42.553178084 -0500
+@@ -25,7 +25,7 @@
+ 
+ log = logging.getLogger("alphaforge.llm")
+ T = TypeVar("T", bound=BaseModel)
+-TRACE_DIR = Path("data/traces")
++TRACE_DIR = config.DATA_DIR / "traces"
+ LAKE_TEXT_MAX = 8_000   # chars of input / output copied into each CloudTrail Lake event (full text stays local)
+ _lock = threading.Lock()
+ _clients: dict[str, Any] = {}
+diff -ruN a/core/storage.py b/core/storage.py
+--- a/core/storage.py	2026-11-15 15:30:42.545019967 -0500
++++ b/core/storage.py	2026-11-15 15:30:42.546400418 -0500
+@@ -7,7 +7,7 @@
+ 
+ from core import config
+ 
+-LOCAL_ROOT = Path("data")
++LOCAL_ROOT = config.DATA_DIR
+ 
+ 
+ def _s3():
+diff -ruN a/pyproject.toml b/pyproject.toml
+--- a/pyproject.toml	2026-11-15 15:30:42.531458788 -0500
++++ b/pyproject.toml	2026-11-15 15:30:42.532820102 -0500
+@@ -12,3 +12,6 @@
+ [build-system]
+ requires = ["setuptools>=68"]
+ build-backend = "setuptools.build_meta"
++
++[tool.vercel]
++entrypoint = "web.app:app"   # Vercel deployment: see DEPLOY.md
+diff -ruN a/tests/test_pipeline_agents.py b/tests/test_pipeline_agents.py
+--- a/tests/test_pipeline_agents.py	2026-11-15 15:30:42.601583595 -0500
++++ b/tests/test_pipeline_agents.py	2026-11-15 15:30:42.602741245 -0500
+@@ -306,3 +306,45 @@
+         second = _post(c, {"NVDA": 50, "RY.TO": 30, "SPY": 20})
+         assert second != first and A._complete(_wait(c, second))
+         assert _post(c, {"NVDA": 50, "RY.TO": 30, "SPY": 20}) == second
++
++
++def test_streamed_run_needs_no_second_request(env, monkeypatch):
++    """Serverless mode: /runs answers with the page (request embedded), /runs/stream runs the analysis in that one
++    request and streams its id, every event, then the report HTML and the map data. Then it is reused like any run."""
++    import json as J
++    import re
++    from fastapi.testclient import TestClient
++    from web import app as A
++    monkeypatch.setattr(config, "STREAM_RUNS", True)
++    form = {"mode": "weight", "as_of": "2026-11-12", "risk_level": "3", "horizon_years": "10", "objective_level": "3",
++            "max_single_weight": "100", "ticker": ["NVDA", "RY.TO", "SPY"], "amount": ["50", "30", "20"]}
++    with TestClient(A.app) as c:
++        page = c.post("/runs", data=form, follow_redirects=False)
++        assert page.status_code == 200 and 'data-status="stream"' in page.text
++        body = re.search(r'<script id="run-payload" type="application/json">(.*?)</script>', page.text, re.S).group(1)
++        lines = [J.loads(x) for x in c.post("/runs/stream", content=body.replace("<\\/", "</"),
++                                             headers={"Content-Type": "application/json"}).text.splitlines()]
++        assert lines[0]["kind"] == "run" and lines[0]["status"] == "start"
++        rid = lines[0]["id"]
++        phases = {e["phase"] for e in lines if e.get("kind") == "phase" and e["status"] == "done"}
++        assert phases >= {"assets", "firms", "scenarios", "macro", "countries", "risk", "remediation"}
++        report = lines[-1]
++        assert report["kind"] == "report" and report["status"] == "done" and report["id"] == rid
++        assert "/100" in report["html"] and report["scenarios"]["scenarios"] and "num" in report["scenarios"]
++        again = c.post("/runs", data=form, follow_redirects=False)                     # complete: replayed from now on
++        assert again.status_code == 303 and again.headers["location"] == f"/runs/{rid}?replay=1"
++        bad = c.post("/runs/stream", json={"portfolio": {"holdings": []}, "profile": {}, "as_of": "x"})
++        assert bad.status_code == 422
++
++
++def test_vercel_copies_the_shipped_data_once(tmp_path):
++    """On Vercel, data/ shipped with the deployment is copied to the writable DATA_DIR at import, traces excluded."""
++    import os
++    import subprocess
++    import sys
++    env = {**os.environ, "VERCEL": "1", "DATA_DIR": str(tmp_path / "d")}
++    code = ("from core import config;import sys;"
++            "print(config.ON_VERCEL, config.STREAM_RUNS, config.FILINGS_WAIT_S, config.DATA_DIR)")
++    out = subprocess.run([sys.executable, "-c", code], env=env, capture_output=True, text=True, check=True).stdout.split()
++    assert out[:3] == ["True", "True", "45.0"] and out[3] == str(tmp_path / "d")
++    assert (tmp_path / "d" / ".seeded").exists() and not (tmp_path / "d" / "traces").exists()
+diff -ruN a/vercel.json b/vercel.json
+--- a/vercel.json	1969-12-31 19:00:00.000000000 -0500
++++ b/vercel.json	2026-11-15 15:30:42.525191366 -0500
+@@ -0,0 +1,9 @@
++{
++  "$schema": "https://openapi.vercel.sh/vercel.json",
++  "functions": {
++    "web/app.py": {
++      "maxDuration": 300,
++      "excludeFiles": "{tests/**,data/traces/**,outputs/**}"
++    }
++  }
++}
+diff -ruN a/web/app.py b/web/app.py
+--- a/web/app.py	2026-11-15 15:30:42.573573865 -0500
++++ b/web/app.py	2026-11-15 15:30:42.574934973 -0500
+@@ -9,7 +9,7 @@
+ from pathlib import Path
+ 
+ from fastapi import FastAPI, File, Request, UploadFile
+-from fastapi.responses import HTMLResponse, JSONResponse, PlainTextResponse, RedirectResponse
++from fastapi.responses import HTMLResponse, JSONResponse, PlainTextResponse, RedirectResponse, StreamingResponse
+ from fastapi.staticfiles import StaticFiles
+ from fastapi.templating import Jinja2Templates
+ from pydantic import ValidationError
+@@ -218,9 +218,76 @@
+     key = analysis_key(payload)
+     if (saved := runs.lookup(key)) and (rec := runs.get(saved)) and _reusable(rec):
+         return RedirectResponse(f"/runs/{saved}?replay=1", status_code=303)   # same analysis done: replay its progress
++    if config.STREAM_RUNS:
++        return _stream_page(request, payload)
+     return RedirectResponse(f"/runs/{_start(payload)}", status_code=303)
+ 
+ 
++# ---------- streamed runs (serverless: config.STREAM_RUNS) ----------
++STREAM_PING_S = 15   # a line at least this often, so an idle connection is not closed while an agent reads
++
++
++def _stream_page(request: Request, payload: dict):
++    """The run page with the request embedded: run.js posts it to /runs/stream, which runs the analysis in that one
++    request and streams its progress, then the report. Nothing depends on another request reaching this instance."""
++    pseudo = {"id": "", "status": "stream", "request": payload, "created": time.time(), "result": None}
++    body = json.dumps(payload, default=str).replace("</", "<\\/")
++    return tpl.TemplateResponse(request, "run.html", _ctx(run=pseudo, req=payload, stale=False, stale_note=STALE_NOTE,
++                                                         ran_at=time.strftime("%Y-%m-%d %H:%M"), replay=False,
++                                                         replay_max=config.REPLAY_MAX_S, replay_step=config.REPLAY_STEP_S,
++                                                         replay_gap=config.REPLAY_GAP_S, replay_hold=config.REPLAY_HOLD_S,
++                                                         stream_payload=body))
++
++
++@app.post("/runs/stream")
++async def run_stream(request: Request):
++    """Run one analysis inside this request. NDJSON lines: {"kind": "run", "status": "start", "id"}, every progress
++    event as the pipeline emits it, then {"kind": "report", "id", "status", "html", "scenarios"}. The request is
++    re-validated and its profile checks recomputed here: the browser only echoes what /runs embedded."""
++    body = await request.json()
++    try:
++        req = AnalysisRequest.model_validate({k: body.get(k) for k in ("portfolio", "profile", "as_of", "scenario_country")})
++    except ValidationError as e:
++        return JSONResponse({"error": str(e)[:500]}, status_code=422)
++    hs = req.portfolio.holdings
++    if (not hs or any(h.ticker not in U.universe() or h.weight <= 0 for h in hs)
++            or abs(sum(h.weight for h in hs) - 1) > 0.01 or not (U.WINDOW[0] <= req.as_of <= U.WINDOW[1])):
++        return JSONResponse({"error": "invalid portfolio or analysis date"}, status_code=422)
++    notes = [str(n)[:300] for n in (body.get("notes") or [])][:20]
++    payload = req.model_dump() | {"checks": profile_checks(req), "notes": notes}
++    run_id = runs.create(payload)
++    task = asyncio.create_task(pipeline.run(run_id))
++    _tasks.add(task)
++    task.add_done_callback(_tasks.discard)
++
++    async def lines():
++        yield json.dumps({"kind": "run", "status": "start", "id": run_id}) + "\n"
++        seq, quiet = 0, time.monotonic()
++        while True:
++            finished = task.done()
++            for e in runs.events_after(run_id, seq):
++                seq = e["seq"]
++                quiet = time.monotonic()
++                yield json.dumps(e, default=str) + "\n"
++            if finished:
++                break
++            if time.monotonic() - quiet > STREAM_PING_S:
++                quiet = time.monotonic()
++                yield json.dumps({"kind": "ping"}) + "\n"
++            await asyncio.sleep(0.25)
++        rec = runs.get(run_id)
++        if _complete(rec):
++            runs.remember(analysis_key(payload), run_id)
++        report = {"kind": "report", "id": run_id, "status": rec["status"], "error": rec.get("error")}
++        if rec["status"] == "done":
++            report["html"] = tpl.TemplateResponse(request, "_result.html",
++                                                  _ctx(run=rec, req=rec["request"], r=rec["result"])).body.decode()
++            report["scenarios"] = _scenarios_data(rec)
++        yield json.dumps(report, default=str) + "\n"
++    return StreamingResponse(lines(), media_type="application/x-ndjson",
++                             headers={"Cache-Control": "no-store", "X-Accel-Buffering": "no"})
++
++
+ def _start(payload: dict) -> str:
+     """Create a run, start the agents in the background, remember it for reuse once it ends complete."""
+     run_id = runs.create(payload)
+@@ -256,11 +323,13 @@
+ 
+ 
+ @app.post("/runs/{run_id}/rerun")
+-async def rerun(run_id: str):
++async def rerun(request: Request, run_id: str):
+     """Same request, fresh analysis (ignores the saved run; agent answers are still reused when inputs match)."""
+     rec = runs.get(run_id)
+     if not rec:
+         return HTMLResponse("Run not found", status_code=404)
++    if config.STREAM_RUNS:
++        return _stream_page(request, dict(rec["request"]))
+     return RedirectResponse(f"/runs/{_start(dict(rec['request']))}", status_code=303)
+ 
+ 
+@@ -310,6 +379,11 @@
+     rec = runs.get(run_id)
+     if not rec or rec["status"] != "done":
+         return JSONResponse({"error": "not ready"}, status_code=404)
++    return _scenarios_data(rec)
++
++
++def _scenarios_data(rec: dict) -> dict:
++    """What the scenario map draws (also sent at the end of a streamed run)."""
+     r = rec["result"]
+     return {"scenarios": r["scenarios"], "names": O.NAMES, "num": COUNTRY_NUM, "highlight": r.get("highlight"),
+             "exposure": {c["iso3"]: c["X"] for c in r["by_country"]}, "assets": r["assets"],
+diff -ruN a/web/static/map.js b/web/static/map.js
+--- a/web/static/map.js	2026-11-15 15:30:42.595067060 -0500
++++ b/web/static/map.js	2026-11-15 15:30:42.596303335 -0500
+@@ -1,12 +1,12 @@
+ // Scenario map: D3 world map, countries coloured by the intensity of the selected scenarios.
+-window.initScenarioMap = async function (runId) {
++window.initScenarioMap = async function (runId, preloaded) {
+   const svgEl = document.getElementById("map");
+   if (!svgEl || svgEl.dataset.ready) return;
+   svgEl.dataset.ready = "1";
+ 
+ 
+   const [data, world] = await Promise.all([
+-    fetch(`/runs/${runId}/scenarios.json`).then(r => r.json()),
++    preloaded ? Promise.resolve(preloaded) : fetch(`/runs/${runId}/scenarios.json`).then(r => r.json()),
+     fetch("/static/vendor/countries-110m.json").then(r => r.json()),
+   ]);
+   // ISO 3166 alpha-3 <-> numeric (world-atlas ids), full table from the server.
+diff -ruN a/web/static/run.js b/web/static/run.js
+--- a/web/static/run.js	2026-11-15 15:30:42.587935872 -0500
++++ b/web/static/run.js	2026-11-15 15:30:42.589344249 -0500
+@@ -2,7 +2,7 @@
+ (() => {
+   const root = document.getElementById("run");
+   if (!root) return;
+-  const runId = root.dataset.run;
++  let runId = root.dataset.run;
+   const $ = id => document.getElementById(id);
+   const PHASES = ["assets", "firms", "scenarios", "macro", "countries", "risk", "remediation"];
+   let seq = 0, done = false;
+@@ -149,15 +149,15 @@
+     }
+   }
+ 
+-  async function finish() {
+-    const html = await (await fetch(`/runs/${runId}/result`)).text();
++  async function finish(html, scenarios) {
++    if (html === undefined) html = await (await fetch(`/runs/${runId}/result`)).text();
+     $("progress").classList.add("leaving");
+     setTimeout(() => {
+       $("progress").hidden = true;
+       $("run-title").textContent = "Geopolitical risk report";
+       $("result").innerHTML = html;
+       $("result").classList.add("appear");
+-      window.initScenarioMap && window.initScenarioMap(runId);
++      window.initScenarioMap && window.initScenarioMap(runId, scenarios);
+       for (const id of ["rerun", "ran-at"]) if ($(id)) $(id).hidden = false;
+     }, 500);
+   }
+@@ -225,10 +225,54 @@
+     setTimeout(poll, 400);
+   }
+ 
++  // Serverless deployment: the analysis runs inside one streamed request (NDJSON): its id, every progress event as
++  // it happens, then the report and the map data. Same handlers as a live run; nothing is fetched from the run later.
++  async function stream() {
++    const fail = msg => { $("run-error").hidden = false; $("run-error").textContent = msg; };
++    let res;
++    try {
++      res = await fetch("/runs/stream", { method: "POST", headers: { "Content-Type": "application/json" },
++                                          body: $("run-payload").textContent });
++    } catch (_) { return fail("The analysis could not be started (network error). Reload the page to try again."); }
++    if (!res.ok || !res.body) return fail(`The analysis could not be started (HTTP ${res.status}).`);
++    const reader = res.body.getReader(), dec = new TextDecoder();
++    let buf = "", report = null;
++    const line = m => {
++      if (m.kind === "ping") return;
++      if (m.kind === "run" && m.status === "start" && m.id) {
++        runId = root.dataset.run = m.id;
++        if ($("rerun")) $("rerun").action = `/runs/${m.id}/rerun`;
++        return;
++      }
++      if (m.kind === "report") { report = m; return; }
++      handle(m);
++    };
++    for (;;) {
++      let chunk;
++      try { chunk = await reader.read(); } catch (_) { break; }
++      if (chunk.done) break;
++      buf += dec.decode(chunk.value, { stream: true });
++      let i;
++      while ((i = buf.indexOf("\n")) >= 0) {
++        const text = buf.slice(0, i).trim();
++        buf = buf.slice(i + 1);
++        if (text) { try { line(JSON.parse(text)); } catch (_) { /* partial or bad line: skip */ } }
++      }
++      if (needPending) showPending();
++    }
++    if (!report) return fail("The analysis was interrupted before it finished (time limit of the hosting). Running it again usually finishes: everything read so far was saved.");
++    if (report.status !== "done") return fail(`The run failed: ${report.error || "unknown error"}`);
++    done = true;
++    if (runId) history.replaceState(null, "", `/runs/${runId}`);
++    setTimeout(() => finish(report.html, report.scenarios), 600);
++  }
++
+   if (root.dataset.status === "done") {
+     window.addEventListener("load", () => window.initScenarioMap && window.initScenarioMap(runId));
+   } else if (root.dataset.status === "replay") {
+     replay();
++  } else if (root.dataset.status === "stream") {
++    stream();
+   } else {
+     poll();
+   }
+diff -ruN a/web/store.py b/web/store.py
+--- a/web/store.py	2026-11-15 15:30:42.559127120 -0500
++++ b/web/store.py	2026-11-15 15:30:42.560411101 -0500
+@@ -9,7 +9,9 @@
+ import uuid
+ from pathlib import Path
+ 
+-ROOT = Path("data")
++from core import config
++
++ROOT = config.DATA_DIR
+ _SAVE_RETRIES = 8          # ~0.7 s total backoff before giving up on one write
+ log = logging.getLogger(__name__)
+ 
+diff -ruN a/web/templates/run.html b/web/templates/run.html
+--- a/web/templates/run.html	2026-11-15 15:30:42.580786591 -0500
++++ b/web/templates/run.html	2026-11-15 15:30:42.582258131 -0500
+@@ -31,9 +31,10 @@
+     </div>
+   </section>
+ 
+-  {% if run.status == "done" %}
+-  <form class="rerun" id="rerun" method="post" action="/runs/{{ run.id }}/rerun"{% if playing %} hidden{% endif %}><button type="submit" class="link">Run this analysis again</button></form>
++  {% if run.status in ("done", "stream") %}
++  <form class="rerun" id="rerun" method="post" action="/runs/{{ run.id }}/rerun"{% if playing or run.status == "stream" %} hidden{% endif %}><button type="submit" class="link">Run this analysis again</button></form>
+   {% endif %}
++  {% if stream_payload %}<script id="run-payload" type="application/json">{{ stream_payload|safe }}</script>{% endif %}
+   <div id="result">
+     {% if run.status == "done" and not playing %}{% if stale %}{{ stale_note|safe }}{% else %}{% with r = run.result %}{% include "_result.html" %}{% endwith %}{% endif %}{% endif %}
+   </div>
+diff -ruN a/web/universe.py b/web/universe.py
+--- a/web/universe.py	2026-11-15 15:30:42.566263936 -0500
++++ b/web/universe.py	2026-11-15 15:30:42.567936157 -0500
+@@ -7,8 +7,10 @@
+ from functools import lru_cache
+ from pathlib import Path
+ 
++from core import config
++
+ HERE = Path(__file__).parent
+-STARTER_DIR = Path(os.environ.get("STARTER_DIR", "data/alphaforge_starter"))
++STARTER_DIR = Path(os.environ.get("STARTER_DIR") or config.DATA_DIR / "alphaforge_starter")
+ WINDOW = ("2021-11-12", "2026-11-12")
+ 
+ ALIASES = {"BTC": "BTC-USD", "ETH": "ETH-USD", "BITCOIN": "BTC-USD", "ETHER": "ETH-USD",

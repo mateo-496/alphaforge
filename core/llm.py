@@ -21,11 +21,11 @@ from typing import Any, Callable, TypeVar
 
 from pydantic import BaseModel, ValidationError
 
-from core import config
+from core import config, storage
 
 log = logging.getLogger("alphaforge.llm")
 T = TypeVar("T", bound=BaseModel)
-TRACE_DIR = Path("data/traces")
+TRACE_DIR = config.DATA_DIR / "traces"
 LAKE_TEXT_MAX = 8_000   # chars of input / output copied into each CloudTrail Lake event (full text stays local)
 _lock = threading.Lock()
 _clients: dict[str, Any] = {}
@@ -47,6 +47,7 @@ class Tracer:
     request_id: str = ""        # Bedrock RequestId = requestID of the CloudTrail `Converse` event
     ms: int = 0
     error: str | None = None
+    cached: bool = False        # answer reused from agent-cache/ (same input): no Bedrock call was made
     id: str = field(default_factory=lambda: uuid.uuid4().hex)
     at: str = field(default_factory=_now)
 
@@ -84,7 +85,7 @@ class Tracer:
               "responseElements": {"output": clip(self.output)},
               "recipientAccountId": config.CLOUDTRAIL_CHANNEL_ARN.split(":")[4],
               "additionalEventData": {"tokenIn": self.token_in, "tokenOut": self.token_out, "latencyMs": self.ms,
-                                      "bedrockRequestId": self.request_id}}
+                                      "bedrockRequestId": self.request_id, "cached": self.cached}}
         if self.error:
             ev["errorMessage"] = self.error[:1000]
         return ev
@@ -202,8 +203,29 @@ def _nudge(text: str) -> dict:
 
 
 def ask(agent: str, system: str, prompt: str, schema: type[T], *, model_id: str | None = None,
-        max_tokens: int = 4096) -> T:
-    """One structured answer. A missing or invalid answer gets up to two retries with the problem shown to the model."""
+        max_tokens: int = 4096, cache: bool = True) -> T:
+    """One structured answer. A missing or invalid answer gets up to two retries with the problem shown to the model.
+    The validated answer is saved under its exact input (model, system, prompt, schema) and reused next time;
+    cache=False always calls the model (and does not save)."""
+    if not cache:
+        return _ask(agent, system, prompt, schema, model_id, max_tokens)
+    model = model_id or config.BEDROCK_MODEL_ID
+    ident = {"v": 1, "model": model, "system": system, "prompt": prompt, "max_tokens": max_tokens,
+             "schema": schema.model_json_schema()}
+    hit = storage.memo_get(f"llm/{agent}", ident)
+    if hit is not None:
+        try:
+            out = schema.model_validate(hit)
+            Tracer(0, 0, {"system": system, "message": prompt}, hit, agent, model, "cache", cached=True).emit()
+            return out
+        except ValidationError:
+            pass
+    out = _ask(agent, system, prompt, schema, model_id, max_tokens)
+    storage.memo_put(f"llm/{agent}", ident, out.model_dump(mode="json"))
+    return out
+
+
+def _ask(agent: str, system: str, prompt: str, schema: type[T], model_id: str | None, max_tokens: int) -> T:
     messages = [{"role": "user", "content": [{"text": prompt}]}]
     for attempt in range(3):
         r = _call(agent, system + HINT, messages, model_id, max_tokens, [_answer_tool(schema)],

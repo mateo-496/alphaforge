@@ -155,3 +155,27 @@ def test_no_snippet_means_no_llm(monkeypatch):
     monkeypatch.setattr(X, "main_text", lambda *a: "Nothing about where sales come from.")
     monkeypatch.setattr(llm, "ask", lambda *a, **k: pytest.fail("no LLM without a snippet"))
     assert X.split("TM", EQ, H, "2026-11-12", weight=0.10)["step"] == "prior:nomatch"
+
+
+def test_late_text_result_is_saved_for_the_next_run(monkeypatch):
+    """A text pass that misses the deadline still lands in the cache: this run uses the prior, the next one reads it."""
+    import threading
+    from core import config
+    store = _fx(monkeypatch)
+    monkeypatch.setattr(config, "EXPOSURE_TEXT_WAIT_S", 0.2)
+    gate = threading.Event()
+
+    def slow(*a):
+        gate.wait(5)
+        return {"HOME": .78, "USA": .22}, [], "regex"
+    monkeypatch.setattr(X, "text_split", slow)
+    first = X.split("TM", EQ, H, "2026-11-12", weight=0.10)
+    assert first["step"] == "prior:timeout" and first["estimated"]
+    gate.set()
+    for _ in range(50):                                  # the callback runs on the worker thread
+        if f"{X.SPLITS}/000123.json" in store:
+            break
+        threading.Event().wait(0.05)
+    monkeypatch.setattr(X, "text_split", lambda *a: pytest.fail("saved: no second read"))
+    again = X.split("TM", EQ, H, "2026-11-12", weight=0.10)
+    assert again["step"] == "cache" and again["tier"]["code"] == "text"

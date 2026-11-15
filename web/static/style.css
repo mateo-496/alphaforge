@@ -203,6 +203,7 @@ button.primary { font: 500 15px var(--sans); background: var(--ink); color: var(
 button.primary:hover { background: var(--accent); border-color: var(--accent); }
 button.primary:disabled { background: transparent; color: var(--muted); border-color: var(--rule); cursor: not-allowed; }
 .back { margin: 24px 0 0; font-size: 14px; }
+.rerun { margin: 0 0 16px; font-size: 14px; }
 
 .footer { padding-top: 40px; padding-bottom: 40px; font-size: 12px; color: var(--muted); }
 

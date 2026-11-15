@@ -12,10 +12,11 @@ import json
 
 from pydantic import BaseModel, Field
 
-from core import llm
+from core import config, llm, storage
 from tools import gpr, risk_math, worldbank
 
 AGENT = "geopolitical"
+
 MAX_LLM_COUNTRIES = 25
 
 SYSTEM_PROMPT = """You are the Geopolitical analyst of AlphaForge, a portfolio-risk system.
@@ -83,18 +84,35 @@ def assess(countries: list[str], as_of: str, scenarios: list[dict], market: dict
         out[c]["driver"] = _fallback(out[c])
     ranked = sorted((c for c in countries if out[c]["g"] is not None), key=lambda c: -exposure.get(c, 0))[:MAX_LLM_COUNTRIES]
     if ranked:
-        emit("llm", "start", "bedrock", "Writing country drivers", f"{len(ranked)} countries · one call")
         facts = [{"country": c, "name": names.get(c, c), "hazard_percentile": round(100 * out[c]["g"]),
                   "index": "own" if not out[c]["proxy"] else "global",
                   "scenarios_involved": [s["name"] for s in out[c]["scenarios"]]} for c in ranked]
-        try:
-            res = llm.ask(AGENT, SYSTEM_PROMPT, json.dumps(facts), CountryDrivers, max_tokens=3000)
-            for d in res.drivers:
-                if d.country in out and d.driver.strip():
-                    out[d.country]["driver"] = d.driver.strip()[:160]
-            meta["llm"] = True
-            emit("llm", "done", "bedrock", "Writing country drivers", f"{len(res.drivers)} drivers")
-        except Exception as e:
-            meta["error"] = f"driver writing failed: {type(e).__name__}: {str(e)[:200]}"
-            emit("llm", "done", "bedrock", "Writing country drivers", "unavailable, factual lines kept")
+        # A driver depends only on its own country's facts: saved per country, so any portfolio reuses it.
+        ident = lambda f: {"model": config.BEDROCK_MODEL_ID, "system": SYSTEM_PROMPT, "fact": f}
+        todo = []
+        for f in facts:
+            saved = storage.memo_get(f"{AGENT}/drivers", ident(f))
+            if saved:
+                out[f["country"]]["driver"] = saved
+            else:
+                todo.append(f)
+        meta["cached"] = len(facts) - len(todo)
+        meta["llm"] = bool(meta["cached"])
+        saved_note = f" · {meta['cached']} saved" if meta["cached"] else ""
+        if not todo:
+            emit("llm", "done", "bedrock", "Writing country drivers", f"{meta['cached']} saved, no call")
+        else:
+            emit("llm", "start", "bedrock", "Writing country drivers", f"{len(todo)} countries · one call{saved_note}")
+            try:
+                res = llm.ask(AGENT, SYSTEM_PROMPT, json.dumps(todo), CountryDrivers, max_tokens=3000)
+                by = {f["country"]: f for f in todo}
+                for d in res.drivers:
+                    if d.country in by and d.driver.strip():
+                        out[d.country]["driver"] = d.driver.strip()[:160]
+                        storage.memo_put(f"{AGENT}/drivers", ident(by[d.country]), out[d.country]["driver"])
+                meta["llm"] = True
+                emit("llm", "done", "bedrock", "Writing country drivers", f"{len(res.drivers)} drivers{saved_note}")
+            except Exception as e:
+                meta["error"] = f"driver writing failed: {type(e).__name__}: {str(e)[:200]}"
+                emit("llm", "done", "bedrock", "Writing country drivers", "unavailable, factual lines kept")
     return out, meta

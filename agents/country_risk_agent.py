@@ -16,7 +16,7 @@ from pydantic import BaseModel, Field
 
 from agents import source_agent
 from agents.risk_agent import check
-from core import llm
+from core import config, llm, storage
 from tools import risk_calculator, worldbank
 
 AGENT = "country_risk"
@@ -90,14 +90,29 @@ def assess(countries: list[str], as_of: str, names: dict, on_event=None,
               "label": out[c]["macro"]["label"],
               "indicators": {v["label"]: f"{v['value']:g} ({v['year']})" for v in out[c]["indicators"].values()}}
              for c in countries if out[c]["macro"] and c in detail]
-    if facts:
-        emit("llm", "start", "bedrock", "Writing macro notes", f"{len(facts)} countries · one call")
+    # A note depends only on its own country's facts: saved per country, so any portfolio reuses it.
+    ident = lambda f: {"model": config.BEDROCK_MODEL_ID, "system": SYSTEM_PROMPT, "fact": f}
+    todo = []
+    for f in facts:
+        saved = storage.memo_get(f"{AGENT}/notes", ident(f))
+        if saved:
+            out[f["country"]]["note"] = saved
+        else:
+            todo.append(f)
+    meta["cached"] = len(facts) - len(todo)
+    meta["llm"] = bool(meta["cached"])
+    if facts and not todo:
+        emit("llm", "done", "bedrock", "Writing macro notes", f"{meta['cached']} saved, no call")
+    if todo:
+        emit("llm", "start", "bedrock", "Writing macro notes",
+             f"{len(todo)} countries · one call" + (f" · {meta['cached']} saved" if meta["cached"] else ""))
         try:
-            res = llm.ask(AGENT, SYSTEM_PROMPT, json.dumps(facts), CountryNotes, max_tokens=2500)
-            by = {f["country"]: f for f in facts}
+            res = llm.ask(AGENT, SYSTEM_PROMPT, json.dumps(todo), CountryNotes, max_tokens=2500)
+            by = {f["country"]: f for f in todo}
             for n in res.notes:
                 if n.country in by and n.note.strip() and check([n.note], by[n.country]):
                     out[n.country]["note"] = n.note.strip()[:100]
+                    storage.memo_put(f"{AGENT}/notes", ident(by[n.country]), out[n.country]["note"])
             meta["llm"] = True
             emit("llm", "done", "bedrock", "Writing macro notes", f"{len(res.notes)} notes")
         except Exception as e:

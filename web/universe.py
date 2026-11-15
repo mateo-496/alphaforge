@@ -7,8 +7,10 @@ from bisect import bisect_right
 from functools import lru_cache
 from pathlib import Path
 
+from core import config
+
 HERE = Path(__file__).parent
-STARTER_DIR = Path(os.environ.get("STARTER_DIR", "data/alphaforge_starter"))
+STARTER_DIR = Path(os.environ.get("STARTER_DIR") or config.DATA_DIR / "alphaforge_starter")
 WINDOW = ("2021-11-12", "2026-11-12")
 
 ALIASES = {"BTC": "BTC-USD", "ETH": "ETH-USD", "BITCOIN": "BTC-USD", "ETHER": "ETH-USD",

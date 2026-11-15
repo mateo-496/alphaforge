@@ -2,7 +2,7 @@
 (() => {
   const root = document.getElementById("run");
   if (!root) return;
-  const runId = root.dataset.run;
+  let runId = root.dataset.run;
   const $ = id => document.getElementById(id);
   const PHASES = ["assets", "firms", "scenarios", "macro", "countries", "risk", "remediation"];
   let seq = 0, done = false;
@@ -149,16 +149,69 @@
     }
   }
 
-  async function finish() {
-    const html = await (await fetch(`/runs/${runId}/result`)).text();
+  async function finish(html, scenarios) {
+    if (html === undefined) html = await (await fetch(`/runs/${runId}/result`)).text();
     $("progress").classList.add("leaving");
     setTimeout(() => {
       $("progress").hidden = true;
       $("run-title").textContent = "Geopolitical risk report";
       $("result").innerHTML = html;
       $("result").classList.add("appear");
-      window.initScenarioMap && window.initScenarioMap(runId);
+      window.initScenarioMap && window.initScenarioMap(runId, scenarios);
+      for (const id of ["rerun", "ran-at"]) if ($(id)) $(id).hidden = false;
     }, 500);
+  }
+
+  // A reused analysis: play its saved event log on the original timeline (compressed to at most
+  // data-replay-max seconds), then show the saved report. Same handlers as a live run.
+  async function replay() {
+    let evs = [];
+    try { evs = (await (await fetch(`/runs/${runId}/events?after=0`)).json()).events; } catch (_) { /* show the report */ }
+    const total = evs.length ? evs[evs.length - 1].t : 0;
+    const num = (v, d) => { const x = parseFloat(v); return Number.isFinite(x) ? x : d; };
+    const maxS = num(root.dataset.replayMax, 20);   // the original timeline is sped up to fit this
+    const stepS = num(root.dataset.replayStep, 0.8); // then held at each phase start / end ...
+    const gapS = num(root.dataset.replayGap, 0.08);  // ... and spaced between lines, so every step can be read
+    const holdS = num(root.dataset.replayHold, 0.9); // an item (holding, company, country) stays in progress at least this long
+    const k = total > maxS ? maxS / total : 1;
+    // Schedule: original order and spacing, plus the pauses above. A finishing item is deferred until it has been in
+    // progress for holdS-2*holdS (varies per item), without holding back the items after it, so several are seen in
+    // flight at once, as in a live run; a phase ends only after its items.
+    const keyOf = e => e.kind !== "phase" && e.kind !== "run" && e.id ? `${e.phase}|${e.kind}|${e.id}` : null;
+    const jitter = key => { let h = 0; for (const c of key) h = (h * 31 + c.charCodeAt(0)) >>> 0; return (h % 1000) / 1000; };
+    const at = new Array(evs.length), startAt = {}, lastItem = {};
+    let shift = 0, prev = 0;
+    evs.forEach((e, j) => {
+      let t = e.t * k + shift;
+      const min = j ? prev + (e.kind === "phase" ? stepS : gapS) : 0;
+      if (e.kind === "phase" && e.status === "done") t = Math.max(t, (lastItem[e.phase] || 0) + stepS);
+      if (t < min) t = min;
+      shift = t - e.t * k;   // later events keep their spacing
+      prev = t;
+      const key = keyOf(e);
+      if (key && e.status === "start") startAt[key] = t;
+      else if (key && e.status === "done" && key in startAt) {
+        const d = Math.max(t, startAt[key] + holdS * (1 + jitter(key)));
+        delete startAt[key];
+        lastItem[e.phase] = Math.max(lastItem[e.phase] || 0, d);
+        at[j] = d;
+        return;
+      }
+      at[j] = t;
+    });
+    const order = evs.map((_, j) => j).sort((x, y) => at[x] - at[y] || x - y);
+    evs = order.map(j => evs[j]);
+    at.sort((x, y) => x - y);
+    const t0 = performance.now();
+    let i = 0;
+    (function step() {
+      const now = (performance.now() - t0) / 1000;
+      while (i < evs.length && at[i] <= now) handle(evs[i++]);
+      if (needPending) showPending();
+      if (i < evs.length) return setTimeout(step, 40);
+      done = true;
+      setTimeout(finish, 600);
+    })();
   }
 
   async function poll() {
@@ -172,8 +225,54 @@
     setTimeout(poll, 400);
   }
 
+  // Serverless deployment: the analysis runs inside one streamed request (NDJSON): its id, every progress event as
+  // it happens, then the report and the map data. Same handlers as a live run; nothing is fetched from the run later.
+  async function stream() {
+    const fail = msg => { $("run-error").hidden = false; $("run-error").textContent = msg; };
+    let res;
+    try {
+      res = await fetch("/runs/stream", { method: "POST", headers: { "Content-Type": "application/json" },
+                                          body: $("run-payload").textContent });
+    } catch (_) { return fail("The analysis could not be started (network error). Reload the page to try again."); }
+    if (!res.ok || !res.body) return fail(`The analysis could not be started (HTTP ${res.status}).`);
+    const reader = res.body.getReader(), dec = new TextDecoder();
+    let buf = "", report = null;
+    const line = m => {
+      if (m.kind === "ping") return;
+      if (m.kind === "run" && m.status === "start" && m.id) {
+        runId = root.dataset.run = m.id;
+        if ($("rerun")) $("rerun").action = `/runs/${m.id}/rerun`;
+        return;
+      }
+      if (m.kind === "report") { report = m; return; }
+      handle(m);
+    };
+    for (;;) {
+      let chunk;
+      try { chunk = await reader.read(); } catch (_) { break; }
+      if (chunk.done) break;
+      buf += dec.decode(chunk.value, { stream: true });
+      let i;
+      while ((i = buf.indexOf("\n")) >= 0) {
+        const text = buf.slice(0, i).trim();
+        buf = buf.slice(i + 1);
+        if (text) { try { line(JSON.parse(text)); } catch (_) { /* partial or bad line: skip */ } }
+      }
+      if (needPending) showPending();
+    }
+    if (!report) return fail("The analysis was interrupted before it finished (time limit of the hosting). Running it again usually finishes: everything read so far was saved.");
+    if (report.status !== "done") return fail(`The run failed: ${report.error || "unknown error"}`);
+    done = true;
+    if (runId) history.replaceState(null, "", `/runs/${runId}`);
+    setTimeout(() => finish(report.html, report.scenarios), 600);
+  }
+
   if (root.dataset.status === "done") {
     window.addEventListener("load", () => window.initScenarioMap && window.initScenarioMap(runId));
+  } else if (root.dataset.status === "replay") {
+    replay();
+  } else if (root.dataset.status === "stream") {
+    stream();
   } else {
     poll();
   }

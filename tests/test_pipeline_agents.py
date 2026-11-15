@@ -216,3 +216,135 @@ def test_every_split_is_tagged_with_its_tier(env):
     assert cw["AAPL"]["country_weights"]["DEU"] > 0                    # Europe split by the prior, not dropped
     jpm = cw["JPM"]["country_weights"]                                  # 78% at home, said by the verified quote
     assert .78 * .8 < jpm["USA"] < .78 * .8 + .2 and cw["GLD"]["country_weights"] == {"Other": 1.0}
+
+
+def test_country_notes_and_drivers_are_saved_per_country(env, monkeypatch):
+    """Second portfolio sharing countries with the first: saved notes / drivers are reused, only new countries are
+    asked for, and the reused text is the same."""
+    from core import llm
+    asked = []
+
+    def counting(agent, system, prompt, schema, **kw):
+        if schema.__name__ in ("CountryNotes", "CountryDrivers"):
+            asked.append((schema.__name__, sorted(f["country"] for f in fakes.json.loads(prompt))))
+        return fakes.fake_ask(agent, system, prompt, schema, **kw)
+    monkeypatch.setattr(llm, "ask", counting)
+    holdings = [{"ticker": "NVDA", "weight": .5}, {"ticker": "RY.TO", "weight": .3}, {"ticker": "SPY", "weight": .2}]
+    first = _run(holdings)["result"]
+    n_first = len(asked)
+    assert n_first == 2
+    again = _run(holdings)["result"]
+    assert len(asked) == n_first                                  # same countries: no call at all
+    drv = lambda r: {c["iso3"]: c["driver"] for c in r["by_country"]}
+    assert drv(again) == drv(first)
+    assert {c: v["note"] for c, v in again["macro"]["countries"].items()} == \
+           {c: v["note"] for c, v in first["macro"]["countries"].items()}
+
+
+def _post(client, holdings: dict, **extra):
+    form = {"mode": "weight", "as_of": "2026-11-12", "risk_level": "3", "horizon_years": "10", "objective_level": "3",
+            "max_single_weight": "100", "ticker": list(holdings), "amount": [str(v) for v in holdings.values()], **extra}
+    r = client.post("/runs", data=form, follow_redirects=False)
+    assert r.status_code == 303, r.text[:300]
+    return r.headers["location"].rsplit("/", 1)[-1].split("?")[0]
+
+
+def _wait(client, rid):
+    import time
+    for _ in range(300):
+        if client.get(f"/runs/{rid}/events").json()["status"] in ("done", "error"):
+            return store.runs.get(rid)
+        time.sleep(0.05)
+    raise AssertionError("run did not finish")
+
+
+def test_same_analysis_reuses_the_finished_run(env, monkeypatch):
+    """Same holdings (any order), profile and date: redirected to the finished run, no new run. A different weight,
+    'run again', an expired entry or RUN_CACHE_DAYS=0 start a fresh one."""
+    from fastapi.testclient import TestClient
+    from web import app as A
+    with TestClient(A.app) as c:
+        first = _post(c, {"NVDA": 50, "RY.TO": 30, "SPY": 20})
+        rec = _wait(c, first)
+        assert rec["status"] == "done" and A._complete(rec)
+        n = len(list((store.runs.root).glob("*/run.json")))
+        assert _post(c, {"SPY": 20, "NVDA": 50, "RY.TO": 30}) == first          # order-free, nothing recomputed
+        assert len(list((store.runs.root).glob("*/run.json"))) == n
+        loc = c.post("/runs", data={"mode": "weight", "as_of": "2026-11-12", "risk_level": "3", "horizon_years": "10",
+                                    "objective_level": "3", "max_single_weight": "100", "ticker": ["NVDA", "RY.TO", "SPY"],
+                                    "amount": ["50", "30", "20"]}, follow_redirects=False).headers["location"]
+        assert loc == f"/runs/{first}?replay=1"
+        page = c.get(loc).text                                   # replay: progress shown, report filled in by run.js
+        assert 'data-status="replay"' in page and 'id="progress" >' in page and "Geopolitical risk report" not in page
+        page = c.get(f"/runs/{first}").text                      # plain link: the report at once
+        assert 'data-status="done"' in page and "Run this analysis again" in page
+        other = _post(c, {"NVDA": 40, "RY.TO": 40, "SPY": 20})
+        assert other != first
+        _wait(c, other)
+        r = c.post(f"/runs/{first}/rerun", follow_redirects=False)
+        fresh = r.headers["location"].rsplit("/", 1)[-1]
+        assert fresh != first and _wait(c, fresh)["request"]["portfolio"] == rec["request"]["portfolio"]
+        assert _post(c, {"NVDA": 50, "RY.TO": 30, "SPY": 20}) == fresh           # the newest complete run is reused
+        store.runs.get(fresh)["created"] -= 8 * 86400                            # older than RUN_CACHE_DAYS (7)
+        newer = _post(c, {"NVDA": 50, "RY.TO": 30, "SPY": 20})
+        assert newer != fresh
+        _wait(c, newer)
+        monkeypatch.setattr(config, "RUN_CACHE_DAYS", 0)
+        assert _post(c, {"NVDA": 50, "RY.TO": 30, "SPY": 20}) != newer
+
+
+def test_partial_run_is_not_reused(env, monkeypatch):
+    """A run with a filing still reading in the background is shown, not reused: the next request reruns."""
+    from fastapi.testclient import TestClient
+    from web import app as A, firms
+    real = firms.analyse
+    monkeypatch.setattr(firms, "analyse", lambda *a, **k: {t: {**v, "status": "pending"} for t, v in real(*a, **k).items()})
+    with TestClient(A.app) as c:
+        first = _post(c, {"NVDA": 50, "RY.TO": 30, "SPY": 20})
+        assert not A._complete(_wait(c, first))
+        monkeypatch.setattr(firms, "analyse", real)
+        second = _post(c, {"NVDA": 50, "RY.TO": 30, "SPY": 20})
+        assert second != first and A._complete(_wait(c, second))
+        assert _post(c, {"NVDA": 50, "RY.TO": 30, "SPY": 20}) == second
+
+
+def test_streamed_run_needs_no_second_request(env, monkeypatch):
+    """Serverless mode: /runs answers with the page (request embedded), /runs/stream runs the analysis in that one
+    request and streams its id, every event, then the report HTML and the map data. Then it is reused like any run."""
+    import json as J
+    import re
+    from fastapi.testclient import TestClient
+    from web import app as A
+    monkeypatch.setattr(config, "STREAM_RUNS", True)
+    form = {"mode": "weight", "as_of": "2026-11-12", "risk_level": "3", "horizon_years": "10", "objective_level": "3",
+            "max_single_weight": "100", "ticker": ["NVDA", "RY.TO", "SPY"], "amount": ["50", "30", "20"]}
+    with TestClient(A.app) as c:
+        page = c.post("/runs", data=form, follow_redirects=False)
+        assert page.status_code == 200 and 'data-status="stream"' in page.text
+        body = re.search(r'<script id="run-payload" type="application/json">(.*?)</script>', page.text, re.S).group(1)
+        lines = [J.loads(x) for x in c.post("/runs/stream", content=body.replace("<\\/", "</"),
+                                             headers={"Content-Type": "application/json"}).text.splitlines()]
+        assert lines[0]["kind"] == "run" and lines[0]["status"] == "start"
+        rid = lines[0]["id"]
+        phases = {e["phase"] for e in lines if e.get("kind") == "phase" and e["status"] == "done"}
+        assert phases >= {"assets", "firms", "scenarios", "macro", "countries", "risk", "remediation"}
+        report = lines[-1]
+        assert report["kind"] == "report" and report["status"] == "done" and report["id"] == rid
+        assert "/100" in report["html"] and report["scenarios"]["scenarios"] and "num" in report["scenarios"]
+        again = c.post("/runs", data=form, follow_redirects=False)                     # complete: replayed from now on
+        assert again.status_code == 303 and again.headers["location"] == f"/runs/{rid}?replay=1"
+        bad = c.post("/runs/stream", json={"portfolio": {"holdings": []}, "profile": {}, "as_of": "x"})
+        assert bad.status_code == 422
+
+
+def test_vercel_copies_the_shipped_data_once(tmp_path):
+    """On Vercel, data/ shipped with the deployment is copied to the writable DATA_DIR at import, traces excluded."""
+    import os
+    import subprocess
+    import sys
+    env = {**os.environ, "VERCEL": "1", "DATA_DIR": str(tmp_path / "d")}
+    code = ("from core import config;import sys;"
+            "print(config.ON_VERCEL, config.STREAM_RUNS, config.FILINGS_WAIT_S, config.DATA_DIR)")
+    out = subprocess.run([sys.executable, "-c", code], env=env, capture_output=True, text=True, check=True).stdout.split()
+    assert out[:3] == ["True", "True", "45.0"] and out[3] == str(tmp_path / "d")
+    assert (tmp_path / "d" / ".seeded").exists() and not (tmp_path / "d" / "traces").exists()

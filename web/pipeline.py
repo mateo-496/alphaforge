@@ -165,10 +165,7 @@ async def run(run_id: str) -> None:
         for t, w in weights.items():
             for c, cw in assets[t]["country_weights"].items():
                 X[c] = X.get(c, 0) + w * cw
-        tiers = [a["tier"]["code"] for a in assets.values()]
-        ev(kind="phase", phase="assets", status="done", label="Market data & filings",
-           detail=" · ".join(f"{tiers.count(k)} {exposure_agent.LABEL[k]}" for k in exposure_agent.LABEL if k in tiers)
-                  + _sec_problem(holdings))
+        ev(kind="phase", phase="assets", status="done", label="Market data & filings")
         steps = [a.get("step") or "?" for a in assets.values()]
         log.info("exposure steps: %s", {k: steps.count(k) for k in sorted(set(steps))})
 

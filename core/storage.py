@@ -7,7 +7,7 @@ from typing import Any, Callable
 
 from core import config
 
-LOCAL_ROOT = Path("data")
+LOCAL_ROOT = config.DATA_DIR
 
 
 def _s3():
@@ -49,6 +49,33 @@ def list_keys(prefix: str) -> list[str]:
         return sorted(keys)
     root = LOCAL_ROOT / prefix
     return sorted(p.relative_to(LOCAL_ROOT).as_posix() for p in root.rglob("*") if p.is_file()) if root.exists() else []
+
+
+def _memo_key(namespace: str, ident: Any) -> str:
+    raw = json.dumps(ident, sort_keys=True, separators=(",", ":"), default=str, ensure_ascii=False)
+    return f"agent-cache/{namespace}/{hashlib.sha256(raw.encode()).hexdigest()}.json"
+
+
+def memo_get(namespace: str, ident: Any) -> Any:
+    """A saved agent answer for exactly this input (`ident`), or None. Never raises: a cache miss just costs a call."""
+    if not config.LLM_CACHE:
+        return None
+    try:
+        entry = read_json(_memo_key(namespace, ident))
+        return entry["value"] if entry else None
+    except Exception:
+        return None
+
+
+def memo_put(namespace: str, ident: Any, value: Any) -> None:
+    """Save an agent answer under its exact input. No expiry: the input carries the data date, the model and the
+    prompt, so new data or a new prompt is a new key."""
+    if not config.LLM_CACHE:
+        return
+    try:
+        write_json(_memo_key(namespace, ident), {"saved_at": datetime.now(timezone.utc).isoformat(), "value": value})
+    except Exception:
+        pass
 
 
 def cached(namespace: str, params: dict, fetch: Callable[[], Any], hours: int = 24) -> Any:

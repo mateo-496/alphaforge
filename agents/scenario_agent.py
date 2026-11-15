@@ -111,7 +111,8 @@ def run(n: int = 12, country: str | None = None, previous: ScenarioSet | None = 
     prompt = _prompt(n, country, previous, sources, gpr)
     t_llm = time.time()
     emit("llm", "start", "bedrock", "Writing scenarios", f"one call · {len(prompt):,} characters in")
-    result = llm.ask(AGENT, SYSTEM_PROMPT, prompt, DraftScenarioSet, model_id=config.SCENARIO_MODEL_ID, max_tokens=16000)
+    result = llm.ask(AGENT, SYSTEM_PROMPT, prompt, DraftScenarioSet, model_id=config.SCENARIO_MODEL_ID, max_tokens=16000,
+                     cache=False)   # weekly sets are already stored by pipelines/scenarios.py; --force must re-ask
     draft, dropped = _verify(result, sources)
     record["llm_seconds"] = round(time.time() - t_llm, 1)
     emit("llm", "done", "bedrock", "Writing scenarios",

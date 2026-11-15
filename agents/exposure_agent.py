@@ -16,7 +16,7 @@ Cheapest check first, stop at the first that applies (the step is logged and sho
   xbrl -> cache (exposure-splits/{accession}.json) -> prior:small (weight < 2%) -> prior:domestic (banks, utilities,
   telecoms, REITs, regional insurers: home 90%, rest by the prior) -> carry (same fiscal year already read) ->
   main-document snippets around geographic wording (none: prior:nomatch, no LLM) -> regex shares (accepted when they
-  add up to 0.9-1.05) -> llm on the snippets only, within EXPOSURE_TEXT_WAIT_S -> stale XBRL -> prior.
+  add up to 0.9-1.05) -> llm on the snippets only (EXPOSURE_TEXT_WAIT_S, default: until done) -> stale XBRL -> prior.
 
     python -m agents.exposure_agent NVDA --as-of 2026-11-12
     python -m agents.exposure_agent --warm --as-of 2026-11-12     # fill the peer library from the starter universe
@@ -312,6 +312,28 @@ def _save_split(ticker: str, f: dict, entry: dict) -> None:
         pass
 
 
+TEXT_DONE = ("regex", "llm", "prior:nomatch", "prior:llm-empty")   # deterministic outcomes of the text pass
+
+
+def _save_text(ticker: str, f: dict, as_of: str, reported: dict, quotes: list, step: str) -> None:
+    """Save the text pass's split under the filing's accession (deterministic outcomes only)."""
+    if step not in TEXT_DONE:
+        return
+    old = (date.fromisoformat(as_of) - date.fromisoformat(f["report_date"])).days > 550
+    _save_split(ticker, f, {"split": reported, "code": ("stale" if old else "text") if reported else None,
+                            "quotes": quotes, "step": step, "report_date": f.get("report_date")})
+
+
+def _save_late(ticker: str, f: dict, as_of: str, fut) -> None:
+    """Callback for a text pass that finished after the run's deadline."""
+    try:
+        reported, quotes, step = fut.result()
+        _save_text(ticker, f, as_of, reported, quotes, step)
+        log.info("exposure %s: late text pass saved (%s)", ticker, step)
+    except Exception as e:
+        log.info("exposure %s: late text pass failed: %s", ticker, e)
+
+
 def reported_split(ticker: str, asset: dict, h: dict, as_of: str, weight: float | None, home: str | None,
                    ind: str | None) -> tuple[dict, str | None, list, str]:
     """Cheapest check first, stop at the first that applies: (split, tier code or None, quotes, step).
@@ -333,16 +355,16 @@ def reported_split(ticker: str, asset: dict, h: dict, as_of: str, weight: float 
     reported, quotes, step = {}, [], "prior"
     if f and h.get("sec_ticker") and asset.get("asset_class") == "equity":
         fut = _TEXT_POOL.submit(text_split, h["sec_ticker"], as_of, home)
-        try:   # bounded: a slow filing download or LLM call falls through to the next tier instead of hanging
+        try:   # by default waits until read; with a deadline, a slow read falls through to the prior (saved later)
             reported, quotes, step = fut.result(timeout=config.EXPOSURE_TEXT_WAIT_S)
         except FuturesTimeout:
             step = "prior:timeout"
+            if acc:   # this run uses the prior; the late answer is saved when it lands, so the next run reads it
+                fut.add_done_callback(lambda fu: _save_late(ticker, f, as_of, fu))
         except Exception as e:
             step = f"prior:error ({type(e).__name__})"
-        if acc and step in ("regex", "llm", "prior:nomatch", "prior:llm-empty"):   # deterministic outcomes only
-            old = (date.fromisoformat(as_of) - date.fromisoformat(f["report_date"])).days > 550
-            _save_split(ticker, f, {"split": reported, "code": ("stale" if old else "text") if reported else None,
-                                    "quotes": quotes, "step": step, "report_date": f.get("report_date")})
+        if acc:
+            _save_text(ticker, f, as_of, reported, quotes, step)
     if reported:
         old = (date.fromisoformat(as_of) - date.fromisoformat(f["report_date"])).days > 550
         return reported, "stale" if old else "text", quotes, step
@@ -384,7 +406,7 @@ def split(ticker: str, asset: dict, h: dict, as_of: str, weight: float | None = 
     why = {"blocked": f"SEC refused the request (HTTP {h.get('http_status')})", "error": "SEC lookup failed",
            "no_sec_ticker": "not an SEC filer", "no_annual_filing": "no annual filing with the SEC"}.get(h.get("exposure_status"))
     if timed_out and not code:
-        why = f"filing text not read within {config.EXPOSURE_TEXT_WAIT_S}s"
+        why = f"filing text not read within {config.EXPOSURE_TEXT_WAIT_S:g}s"
     log.info("exposure %s: stopped at %s -> %s", ticker, step, tier["label"])
     return {"ticker": ticker, "country_weights": weights, "tier": tier, "estimated": lam < 1, "step": step,
             "status": h.get("exposure_status"),

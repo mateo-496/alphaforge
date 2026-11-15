@@ -4,7 +4,7 @@
   * filing-risk agent (agents/filing_risk_agent.py): every risk disclosed in the Risk Factors section, quotes
     checked word for word; context only."""
 import threading
-from concurrent.futures import ThreadPoolExecutor, wait
+from concurrent.futures import Future, ThreadPoolExecutor, wait
 
 from agents import filing_risk_agent, filings_agent
 from core import config, storage
@@ -15,7 +15,7 @@ TOP_N, PARALLEL = config.FILINGS_TOP_N, config.FILINGS_PARALLEL
 # How long the run waits for the filings agent. Companies not finished by then keep running in the
 # background and write their cache entry, so the next analysis this month picks them up instantly.
 # The report never waits minutes for a term worth 20% of a holding's score.
-WAIT_S = config.FILINGS_WAIT_S
+WAIT_S = config.FILINGS_WAIT_S   # None (default): wait until every company is read and saved
 # Step-1 statuses that mean the filing has no usable 10-K / 20-F text (40-F filers: RY, TD, ENB, CNQ...).
 SKIP_STATUS = {"no_sec_ticker", "no_annual_filing", "error", "blocked"}
 
@@ -40,15 +40,8 @@ def _err(e: Exception) -> str:
     return f"{type(e).__name__}: {str(e)[:160]}"
 
 
-def _one(ticker: str, sec_t: str, as_of: str, emit) -> dict:
-    """Both filing agents on one company, at the same time. Cached per company and month when the filings agent
-    succeeded; a failed filing-risk read is recorded and does not block the f_i term."""
-    key = f"firms/v3/{sec_t}_{as_of[:7]}.json"
-    cached = storage.read_json(key)
-    if cached:
-        emit("done", ticker, sec_t, cached, True)
-        return cached
-    emit("start", ticker, sec_t, None, False)
+def _read(ticker: str, sec_t: str, as_of: str, key: str) -> dict:
+    """Both filing agents on one company, at the same time; saved when the filings agent succeeded."""
     with ThreadPoolExecutor(max_workers=2) as pool:
         f_claims = pool.submit(_claims, ticker, sec_t, as_of)
         f_risks = pool.submit(filing_risk_agent.run, sec_t, as_of)
@@ -63,20 +56,56 @@ def _one(ticker: str, sec_t: str, as_of: str, emit) -> dict:
     out = {"ticker": ticker, "sec_ticker": sec_t, **out}
     if out["status"] == "ok":
         storage.write_json(key, out)
+    return out
+
+
+# Reads in progress, shared by every run that needs the same company and month: a second analysis started while
+# the first is still reading (or reading in the background) waits for that read instead of starting another.
+_inflight: dict[str, Future] = {}
+_inflight_lock = threading.Lock()
+_readers = ThreadPoolExecutor(max_workers=PARALLEL * 2, thread_name_prefix="firms")
+
+
+def _shared_read(ticker: str, sec_t: str, as_of: str, key: str) -> Future:
+    with _inflight_lock:
+        fut = _inflight.get(key)
+        if fut is None:
+            fut = _inflight[key] = _readers.submit(_read, ticker, sec_t, as_of, key)
+            fut.add_done_callback(lambda f: _inflight.pop(key, None))
+        return fut
+
+
+def _one(ticker: str, sec_t: str, as_of: str, emit) -> dict:
+    """One company: the saved read for this month, else the (shared) read in progress."""
+    key = f"firms/v3/{sec_t}_{as_of[:7]}.json"
+    cached = storage.read_json(key)
+    if cached:
+        cached = {**cached, "ticker": ticker}
+        emit("done", ticker, sec_t, cached, True)
+        return cached
+    emit("start", ticker, sec_t, None, False)
+    out = {**_shared_read(ticker, sec_t, as_of, key).result(), "ticker": ticker}
     emit("done", ticker, sec_t, out, False)
     return out
 
 
-def analyse(weights: dict, uni: dict, as_of: str, emit, statuses: dict | None = None) -> dict[str, dict]:
-    """Run the filings agent on the TOP_N largest equity holdings with a readable 10-K / 20-F.
-    Cached companies return at once; the rest get WAIT_S seconds, then come back as status "pending"
-    while their agent finishes in the background (result cached for the next run)."""
+def picks(weights: dict, uni: dict, statuses: dict | None = None) -> list[tuple[str, str]]:
+    """The TOP_N largest equity holdings with a readable 10-K / 20-F: (ticker, SEC ticker)."""
     statuses = statuses or {}
-    picks = [(t, sec_ticker(t, uni[t])) for t, _ in sorted(weights.items(), key=lambda kv: -kv[1])
-             if uni[t]["asset_class"] == "equity" and statuses.get(t) not in SKIP_STATUS]
-    picks = [(t, s) for t, s in picks if s][:TOP_N]
-    if not picks:
+    out = [(t, sec_ticker(t, uni[t])) for t, _ in sorted(weights.items(), key=lambda kv: -kv[1])
+           if uni[t]["asset_class"] == "equity" and statuses.get(t) not in SKIP_STATUS]
+    return [(t, s) for t, s in out if s][:TOP_N]
+
+
+def analyse(weights: dict, uni: dict, as_of: str, emit, statuses: dict | None = None,
+            wait_s: float | None | str = "default") -> dict[str, dict]:
+    """Run the filings agent on the TOP_N largest equity holdings with a readable 10-K / 20-F.
+    Cached companies return at once; the rest get `wait_s` seconds (None = until done), then come back as status
+    "pending" while their agent finishes in the background (result cached for the next run)."""
+    chosen = picks(weights, uni, statuses)
+    if not chosen:
         return {}
+    wait_s = WAIT_S if wait_s == "default" else wait_s
     closed, lock = set(), threading.Lock()
 
     def once(status, t, sec_t, out, cached):   # a late background thread must not emit a second "done"
@@ -88,8 +117,8 @@ def analyse(weights: dict, uni: dict, as_of: str, emit, statuses: dict | None = 
         emit(status, t, sec_t, out, cached)
 
     pool = ThreadPoolExecutor(max_workers=PARALLEL)
-    futs = {pool.submit(_one, t, s, as_of, once): (t, s) for t, s in picks}
-    done, pending = wait(futs, timeout=WAIT_S)
+    futs = {pool.submit(_one, t, s, as_of, once): (t, s) for t, s in chosen}
+    done, pending = wait(futs, timeout=wait_s)
     pool.shutdown(wait=False)   # unfinished agents keep going and fill the cache
     res = {}
     for f in done:

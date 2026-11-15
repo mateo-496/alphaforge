@@ -2,15 +2,16 @@
 {% block title %}Analysis · AlphaForge{% endblock %}
 {% block content %}
 {% set p = req.profile %}
+{% set playing = replay and run.status == "done" and not stale %}
 <p class="back"><a href="/">‹ New analysis</a></p>
 
-<div id="run" data-run="{{ run.id }}" data-status="{{ run.status }}">
+<div id="run" data-run="{{ run.id }}" data-status="{{ "replay" if playing else run.status }}" data-replay-max="{{ replay_max }}" data-replay-step="{{ replay_step }}" data-replay-gap="{{ replay_gap }}" data-replay-hold="{{ replay_hold }}">
   <section class="intro intro-tight">
-    <p class="kicker">{% if p.persona %}{{ personas[p.persona].label }} · {% endif %}{{ req.portfolio.holdings|length }} holdings · as of {{ req.as_of }}</p>
-    <h1 id="run-title">{% if run.status == "done" %}Geopolitical risk report{% else %}Analysing the portfolio{% endif %}</h1>
+    <p class="kicker">{% if p.persona %}{{ personas[p.persona].label }} · {% endif %}{{ req.portfolio.holdings|length }} holdings · as of {{ req.as_of }}<span id="ran-at"{% if playing or run.status != "done" %} hidden{% endif %}> · analysed {{ ran_at }}</span></p>
+    <h1 id="run-title">{% if run.status == "done" and not playing %}Geopolitical risk report{% else %}Analysing the portfolio{% endif %}</h1>
   </section>
 
-  <section class="progress block" id="progress" {% if run.status == "done" %}hidden{% endif %}>
+  <section class="progress block" id="progress" {% if run.status == "done" and not playing %}hidden{% endif %}>
     <div class="block-head">
       <ol class="phases">
         {% for key, lbl in [("assets", "Market data & filings"), ("firms", "Company disclosures"), ("scenarios", "Scenarios"), ("macro", "Macro & sources"), ("countries", "Country risk"), ("risk", "Portfolio risk"), ("remediation", "Recommendations")] %}
@@ -30,8 +31,12 @@
     </div>
   </section>
 
+  {% if run.status in ("done", "stream") %}
+  <form class="rerun" id="rerun" method="post" action="/runs/{{ run.id }}/rerun"{% if playing or run.status == "stream" %} hidden{% endif %}><button type="submit" class="link">Run this analysis again</button></form>
+  {% endif %}
+  {% if stream_payload %}<script id="run-payload" type="application/json">{{ stream_payload|safe }}</script>{% endif %}
   <div id="result">
-    {% if run.status == "done" %}{% if stale %}{{ stale_note|safe }}{% else %}{% with r = run.result %}{% include "_result.html" %}{% endwith %}{% endif %}{% endif %}
+    {% if run.status == "done" and not playing %}{% if stale %}{{ stale_note|safe }}{% else %}{% with r = run.result %}{% include "_result.html" %}{% endwith %}{% endif %}{% endif %}
   </div>
 </div>
 

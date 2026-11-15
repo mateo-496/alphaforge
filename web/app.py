@@ -5,10 +5,11 @@ Run locally:  uvicorn web.app:app --reload --port 8080   (from the repo root)
 import asyncio
 import json
 import logging
+import time
 from pathlib import Path
 
 from fastapi import FastAPI, File, Request, UploadFile
-from fastapi.responses import HTMLResponse, JSONResponse, PlainTextResponse, RedirectResponse
+from fastapi.responses import HTMLResponse, JSONResponse, PlainTextResponse, RedirectResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from pydantic import ValidationError
@@ -16,7 +17,7 @@ from pydantic import ValidationError
 from core import config
 from core.schemas import AnalysisRequest, Holding, InvestorProfile, Portfolio
 from web import pipeline, profile, universe as U
-from web.store import runs
+from web.store import analysis_key, runs
 from web.samples import samples
 from web.personas import PERSONAS
 from web import options as O
@@ -214,19 +215,135 @@ async def create_run(request: Request):
     if errors:
         return tpl.TemplateResponse(request, "error.html", _ctx(errors=errors, notes=notes), status_code=422)
     payload = req.model_dump() | {"checks": profile_checks(req), "notes": notes}
+    key = analysis_key(payload)
+    if (saved := runs.lookup(key)) and (rec := runs.get(saved)) and _reusable(rec):
+        return RedirectResponse(f"/runs/{saved}?replay=1", status_code=303)   # same analysis done: replay its progress
+    if config.STREAM_RUNS:
+        return _stream_page(request, payload)
+    return RedirectResponse(f"/runs/{_start(payload)}", status_code=303)
+
+
+# ---------- streamed runs (serverless: config.STREAM_RUNS) ----------
+STREAM_PING_S = 15   # a line at least this often, so an idle connection is not closed while an agent reads
+
+
+def _stream_page(request: Request, payload: dict):
+    """The run page with the request embedded: run.js posts it to /runs/stream, which runs the analysis in that one
+    request and streams its progress, then the report. Nothing depends on another request reaching this instance."""
+    pseudo = {"id": "", "status": "stream", "request": payload, "created": time.time(), "result": None}
+    body = json.dumps(payload, default=str).replace("</", "<\\/")
+    return tpl.TemplateResponse(request, "run.html", _ctx(run=pseudo, req=payload, stale=False, stale_note=STALE_NOTE,
+                                                         ran_at=time.strftime("%Y-%m-%d %H:%M"), replay=False,
+                                                         replay_max=config.REPLAY_MAX_S, replay_step=config.REPLAY_STEP_S,
+                                                         replay_gap=config.REPLAY_GAP_S, replay_hold=config.REPLAY_HOLD_S,
+                                                         stream_payload=body))
+
+
+@app.post("/runs/stream")
+async def run_stream(request: Request):
+    """Run one analysis inside this request. NDJSON lines: {"kind": "run", "status": "start", "id"}, every progress
+    event as the pipeline emits it, then {"kind": "report", "id", "status", "html", "scenarios"}. The request is
+    re-validated and its profile checks recomputed here: the browser only echoes what /runs embedded."""
+    body = await request.json()
+    try:
+        req = AnalysisRequest.model_validate({k: body.get(k) for k in ("portfolio", "profile", "as_of", "scenario_country")})
+    except ValidationError as e:
+        return JSONResponse({"error": str(e)[:500]}, status_code=422)
+    hs = req.portfolio.holdings
+    if (not hs or any(h.ticker not in U.universe() or h.weight <= 0 for h in hs)
+            or abs(sum(h.weight for h in hs) - 1) > 0.01 or not (U.WINDOW[0] <= req.as_of <= U.WINDOW[1])):
+        return JSONResponse({"error": "invalid portfolio or analysis date"}, status_code=422)
+    notes = [str(n)[:300] for n in (body.get("notes") or [])][:20]
+    payload = req.model_dump() | {"checks": profile_checks(req), "notes": notes}
     run_id = runs.create(payload)
+    task = asyncio.create_task(pipeline.run(run_id))
+    _tasks.add(task)
+    task.add_done_callback(_tasks.discard)
+
+    async def lines():
+        yield json.dumps({"kind": "run", "status": "start", "id": run_id}) + "\n"
+        seq, quiet = 0, time.monotonic()
+        while True:
+            finished = task.done()
+            for e in runs.events_after(run_id, seq):
+                seq = e["seq"]
+                quiet = time.monotonic()
+                yield json.dumps(e, default=str) + "\n"
+            if finished:
+                break
+            if time.monotonic() - quiet > STREAM_PING_S:
+                quiet = time.monotonic()
+                yield json.dumps({"kind": "ping"}) + "\n"
+            await asyncio.sleep(0.25)
+        rec = runs.get(run_id)
+        if _complete(rec):
+            runs.remember(analysis_key(payload), run_id)
+        report = {"kind": "report", "id": run_id, "status": rec["status"], "error": rec.get("error")}
+        if rec["status"] == "done":
+            report["html"] = tpl.TemplateResponse(request, "_result.html",
+                                                  _ctx(run=rec, req=rec["request"], r=rec["result"])).body.decode()
+            report["scenarios"] = _scenarios_data(rec)
+        yield json.dumps(report, default=str) + "\n"
+    return StreamingResponse(lines(), media_type="application/x-ndjson",
+                             headers={"Cache-Control": "no-store", "X-Accel-Buffering": "no"})
+
+
+def _start(payload: dict) -> str:
+    """Create a run, start the agents in the background, remember it for reuse once it ends complete."""
+    run_id = runs.create(payload)
+    key = analysis_key(payload)
+
+    def ended(task):
+        _tasks.discard(task)
+        rec = runs.get(run_id)
+        if rec and _complete(rec):
+            runs.remember(key, run_id)
     _tasks.add(t := asyncio.create_task(pipeline.run(run_id)))  # keep a reference until done
-    t.add_done_callback(_tasks.discard)
-    return RedirectResponse(f"/runs/{run_id}", status_code=303)
+    t.add_done_callback(ended)
+    return run_id
+
+
+def _complete(rec: dict) -> bool:
+    """Finished with every input read: no filing still reading in the background, no filing text cut by the
+    deadline, no agent failure. A partial run is shown but not reused; the next identical request reruns it
+    (fast: agent answers are cached) and that complete run is the one reused."""
+    r = rec.get("result") or {}
+    if rec.get("status") != "done" or not r:
+        return False
+    if any((f or {}).get("status") == "pending" for f in (r.get("firms") or {}).values()):
+        return False
+    if any(str((h.get("tier") or {}).get("step", "")).startswith(("prior:timeout", "prior:error")) for h in r.get("by_holding", [])):
+        return False
+    return r.get("agent_status") != "unavailable"
+
+
+def _reusable(rec: dict) -> bool:
+    age_days = (time.time() - rec.get("created", 0)) / 86400
+    return config.RUN_CACHE_DAYS > 0 and age_days < config.RUN_CACHE_DAYS and _complete(rec) and not _stale(rec)
+
+
+@app.post("/runs/{run_id}/rerun")
+async def rerun(request: Request, run_id: str):
+    """Same request, fresh analysis (ignores the saved run; agent answers are still reused when inputs match)."""
+    rec = runs.get(run_id)
+    if not rec:
+        return HTMLResponse("Run not found", status_code=404)
+    if config.STREAM_RUNS:
+        return _stream_page(request, dict(rec["request"]))
+    return RedirectResponse(f"/runs/{_start(dict(rec['request']))}", status_code=303)
 
 
 @app.get("/runs/{run_id}", response_class=HTMLResponse)
-def run_page(request: Request, run_id: str):
+def run_page(request: Request, run_id: str, replay: bool = False):
     rec = runs.get(run_id)
     if not rec:
         return HTMLResponse("Run not found", status_code=404)
     return tpl.TemplateResponse(request, "run.html", _ctx(run=rec, req=rec["request"],
-                                                         stale=rec["status"] == "done" and _stale(rec), stale_note=STALE_NOTE))
+                                                         stale=rec["status"] == "done" and _stale(rec), stale_note=STALE_NOTE,
+                                                         ran_at=time.strftime("%Y-%m-%d %H:%M", time.localtime(rec["created"])),
+                                                         replay=replay, replay_max=config.REPLAY_MAX_S,
+                                                         replay_step=config.REPLAY_STEP_S, replay_gap=config.REPLAY_GAP_S,
+                                                         replay_hold=config.REPLAY_HOLD_S))
 
 
 @app.get("/runs/{run_id}/events")
@@ -262,6 +379,11 @@ def run_scenarios(run_id: str):
     rec = runs.get(run_id)
     if not rec or rec["status"] != "done":
         return JSONResponse({"error": "not ready"}, status_code=404)
+    return _scenarios_data(rec)
+
+
+def _scenarios_data(rec: dict) -> dict:
+    """What the scenario map draws (also sent at the end of a streamed run)."""
     r = rec["result"]
     return {"scenarios": r["scenarios"], "names": O.NAMES, "num": COUNTRY_NUM, "highlight": r.get("highlight"),
             "exposure": {c["iso3"]: c["X"] for c in r["by_country"]}, "assets": r["assets"],

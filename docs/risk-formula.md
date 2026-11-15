@@ -42,7 +42,7 @@ Stop at the first that applies; the step is logged per holding (`cache`, `xbrl`,
 5. Same fiscal year already read from another filing → carried forward.
 6. Main document only: ~1,500-character snippets around geographic wording; none → prior, no LLM call.
 7. Regex `N% of (our) (total) (net) revenue/sales` next to a place, or "substantially all of our revenue … <country>"; accepted when $0.9 \le \sum_c w_{ic} \le 1.05$.
-8. LLM on the snippets only, within `EXPOSURE_TEXT_WAIT_S` (60 s).
+8. LLM on the snippets only (no deadline by default; `EXPOSURE_TEXT_WAIT_S` sets one). The answer is saved per filing.
 
 ## 2. Inputs, for any exposure vector (a holding's $w_{ic}$, or the portfolio's $X_c = \sum_i w_i w_{ic}$)
 

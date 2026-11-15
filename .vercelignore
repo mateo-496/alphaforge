@@ -1,0 +1,14 @@
+# Secrets: never uploaded. Set them in the Vercel project instead (Settings > Environment Variables).
+.env
+.env.*
+!.env.example
+# Not needed at runtime
+.venv
+venv
+tests
+outputs
+.pytest_cache
+**/__pycache__
+data/traces
+*.zip
+*.patch

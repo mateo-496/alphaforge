@@ -198,8 +198,9 @@ them the company term is *not applicable*, which is different from *not read yet
   $$f_i = \frac{\#\{\text{distinct channels with at least one verified quote}\}}{8}$$
 
   The claim's severity and confidence written by the model are **not used**. With about 6 claims at most, $f_i$
-  rarely exceeds 0.75. A filing that is not read within `FILINGS_WAIT_S` (45 s) carries on in the background:
-  $f_i$ is **unknown** for this run (`None`), and the result is cached for the next analysis.
+  rarely exceeds 0.75. By default the run waits until every company is read, and each read is saved for the month,
+  so later runs reuse it. With a deadline (`FILINGS_WAIT_S` > 0), a company not read in time carries on in the
+  background: $f_i$ is **unknown** for this run (`None`), and the result is saved for the next analysis.
 - **Company sleeve** $C = \{i : i \text{ is an equity}\}$, $s = \sum_{i \in C} w_i \,/\, \sum_i w_i$.
 
 $$A_3 = \frac{\sum_{i \in C,\ f_i \text{ known}} w_i\, f_i}{\sum_{i \in C,\ f_i \text{ known}} w_i},
