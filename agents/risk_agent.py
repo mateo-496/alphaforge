@@ -1,7 +1,10 @@
-"""Risk agent: explains the computed portfolio risk in a few sentences.
+"""Risk agent: explains the computed portfolio risk in a few sentences. It computes no number.
 
+The score itself is computed by code before this agent runs (web/pipeline.py step 6: web/scoring.py feeding
+tools/portfolio_score.portfolio_scores); every step is written out in docs/risk-agent-calculations.md.
 Numbers come from code (tools/risk_math, web/pipeline). The model only writes prose around them, and code
 rejects any sentence containing a number that is not in the supplied facts (no invented figures)."""
+
 import json
 import re
 

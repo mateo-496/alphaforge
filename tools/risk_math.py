@@ -1,4 +1,5 @@
 """Deterministic scoring. The LLM explains these numbers; it never invents them."""
+import math
 from statistics import fmean, pstdev
 
 
@@ -15,8 +16,7 @@ def portfolio_risk(weights: dict[str, float], ticker_scores: dict[str, float]) -
 # No LLM-made number enters the score. LLMs only extract facts (verbatim quotes, country lists) that code verifies.
 #
 #   Exposure        X_c  = sum_i w_i w_ic                                  (SEC revenue tables, parsed by code)
-#   Country hazard  g_c  = percentile of GPR_c among its own past months     (Caldara-Iacoviello GPR, 0-1)
-#                          countries without GPR coverage use the global GPR, labelled
+#   Country hazard  g_c  = L_c (1/2 + heat_c/2), see hazard() below          (WGI + Caldara-Iacoviello GPR, 0-1)
 #   Market stress   m    = mean z of OFR FSI, STLFSI4, VIX (3-year window);  A = 1 + 0.15 clip(m, 0, 3)
 #   Firm flags      f_i  = share of the 8 risk channels with a verified quote in the filing (code-checked)
 #   Holding         G_i  = 100 [ a_i A sum_c w_ic g_c + (1 - a_i) f_i ],  a_i = 0.8 if the filing was read, else 1
@@ -65,6 +65,41 @@ def market_stress_level(global_z: dict[str, float | None]) -> float | None:
 
 def amplifier(m: float | None, gamma: float = GAMMA) -> float:
     return 1 + gamma * _clip(m, 0, 3) if m is not None else 1.0
+
+
+# ---------- Country hazard g_c (A2 input): level across countries x heat vs. own history ----------
+#   S_c    = clip((1.5 - PV_c) / 3.5)        internal instability, WGI political stability PV (about -2.5..2.5)
+#   E_c    = clip((ln GPR12_c - lo) / (hi - lo))   external tension: 12-month mean GPR level on a log scale,
+#            lo = 10th percentile, hi = max over the covered countries (tools/gpr.tension_anchors).
+#            Not used for PRESS_COUNTRIES: GPR counts articles in US, UK and Canadian newspapers, so home
+#            coverage inflates their level.
+#   L_c    = mean of the available parts of (S_c, E_c)        (None if neither is available)
+#   heat_c = percentile of GPR_c among its own past months (global GPR when the country is not covered)
+#   g_c    = L_c * (1/2 + heat_c / 2)         a calm country stays calm when its news coverage spikes
+PV_SAFE, PV_DANGER = 1.5, -2.0
+PRESS_COUNTRIES = frozenset({"USA", "GBR", "CAN"})
+
+
+def instability(pv: float | None) -> float | None:
+    """S_c from the WGI political-stability estimate."""
+    return None if pv is None else _clip((PV_SAFE - pv) / (PV_SAFE - PV_DANGER))
+
+
+def tension(mean_12m: float | None, anchors: tuple[float, float] | None, iso3: str = "") -> float | None:
+    """E_c from the 12-month mean GPR level; None for press countries or without data."""
+    if mean_12m is None or mean_12m <= 0 or not anchors or iso3 in PRESS_COUNTRIES:
+        return None
+    lo, hi = anchors
+    return _clip((math.log(mean_12m) - lo) / (hi - lo)) if hi > lo else None
+
+
+def hazard(S: float | None, E: float | None, heat: float | None) -> float | None:
+    """g_c = L_c (1/2 + heat/2). Heat alone (no level) is not a hazard: returns None, so A2 is shrunk."""
+    parts = [x for x in (S, E) if x is not None]
+    if not parts:
+        return None
+    L = sum(parts) / len(parts)
+    return L * (0.5 + 0.5 * (heat if heat is not None else 0.5))
 
 
 def firm_flags(channels_verified: list[str] | None) -> float | None:
@@ -272,3 +307,114 @@ def watchlist(events: list[Event], weights: dict[str, float], assets: dict[str, 
         ranked.append({"event": e, "impact": x * e.severity * e.likelihood / (1 + days / 90),
                        "affected_holdings": holdings})
     return sorted(ranked, key=lambda r: -r["impact"])[:top]
+
+
+# ── Agent-output scoring functions ───────────────────────────────────────────
+# Each function takes an AgentOutput (the agent's JSON contract) and returns a
+# plain dict with a deterministic numeric score.  Identical inputs → identical
+# outputs.  The LLM never touches these numbers.
+
+from core.schemas import AgentOutput  # noqa: E402  (import after other local defs)
+
+
+
+# ── Per-domain channel-severity amplifiers (restored from origin/equation) ──
+FILINGS_CHANNEL_WEIGHTS: dict[str, float] = {
+    "export_controls": 1.4, "sanctions": 1.4, "trade_tariffs": 1.2, "conflict_exposure": 1.2,
+    "supply_chain": 1.1, "regulatory": 1.0, "fx_capital_controls": 1.0, "financial_stress": 0.9,
+}
+GEO_CHANNEL_WEIGHTS: dict[str, float] = {
+    "conflict_exposure": 1.5, "sanctions": 1.3, "trade_tariffs": 1.1, "export_controls": 1.1,
+    "fx_capital_controls": 1.0, "financial_stress": 1.0, "supply_chain": 0.9, "regulatory": 0.8,
+}
+
+#: Power-mean exponent used when turning claims into one score. p = 1 is the
+#: plain weighted mean; p = 3 lets one severe, well-sourced claim dominate a
+#: handful of minor ones (a firm with one 5/5 sanctions exposure is not "fine
+#: on average"), while all-equal claims still return that same score.
+CLAIM_POWER: float = 3.0
+
+
+def q_bar_weighted(claims: list[Claim], channel_weights: dict[str, float] | None = None,
+                   p: float = 1.0) -> float:
+    """Channel-weighted, confidence-weighted power mean of claim scores ∈ [0, 5].
+
+    Equation
+    --------
+    q = ( Σ_i (w_ch_i · c_i · s_i^p) / Σ_i (w_ch_i · c_i) )^{1/p}
+
+    where
+      w_ch_i  = channel_weights[channel_i] (1.0 if channel_weights is None)
+      c_i     ∈ [0, 1]  confidence of claim i
+      s_i     ∈ [0, 5]  severity score of claim i
+      p       ≥ 1       power (1 = weighted mean, the default)
+
+    Returns 0.0 for empty claim lists (no score possible without evidence).
+    """
+    if not claims:
+        return 0.0
+    total_w = 0.0
+    total_ws = 0.0
+    for c in claims:
+        ch_w = channel_weights.get(c.channel, 1.0) if channel_weights else 1.0
+        w = ch_w * c.confidence
+        total_w += w
+        total_ws += w * float(c.score) ** p
+    return (total_ws / total_w) ** (1.0 / p) if total_w > 0 else 0.0
+
+
+def score_filings(output: AgentOutput) -> dict[str, float]:
+    """Deterministic firm-exposure score from a filings AgentOutput (A3 input).
+
+    Scoring equation
+    ----------------
+    firm_score = q_bar_weighted(claims, FILINGS_CHANNEL_WEIGHTS, p=CLAIM_POWER)   ∈ [0, 5]
+    confidence = (mean_claim_confidence) × min(1, n_claims / 5)    ∈ [0, 1]
+
+    The coverage term (min(1, n/5)) shrinks confidence when fewer than 5
+    claims are available; it reaches 1 at 5+ claims.
+
+    Returns
+    -------
+    {"firm_score": float, "confidence": float, "num_claims": int}
+    """
+    claims = output.claims
+    if not claims:
+        return {"firm_score": 0.0, "confidence": 0.0, "num_claims": 0}
+    fs = q_bar_weighted(claims, FILINGS_CHANNEL_WEIGHTS, p=CLAIM_POWER)
+    mean_conf = sum(c.confidence for c in claims) / len(claims)
+    coverage = min(1.0, len(claims) / 5.0)
+    return {
+        "firm_score": round(fs, 4),
+        "confidence": round(mean_conf * coverage, 4),
+        "num_claims": len(claims),
+    }
+
+
+def score_geopolitical(output: AgentOutput) -> dict[str, float]:
+    """Deterministic country risk score R from a geopolitical AgentOutput (A1/A2 input).
+
+    Scoring equation
+    ----------------
+    R = q_bar_weighted(claims, GEO_CHANNEL_WEIGHTS, p=CLAIM_POWER) / 5 × 100   ∈ [0, 100]
+    confidence = (mean_claim_confidence) × min(1, n_claims / 4)  ∈ [0, 1]
+
+    The coverage term reaches 1 at 4+ claims (GPR analysis typically yields
+    fewer but higher-quality claims than filings analysis).
+
+    Returns
+    -------
+    {"R": float, "confidence": float, "num_claims": int}
+    """
+    claims = output.claims
+    if not claims:
+        return {"R": 0.0, "confidence": 0.0, "num_claims": 0}
+    q = q_bar_weighted(claims, GEO_CHANNEL_WEIGHTS, p=CLAIM_POWER)
+    r = q / 5.0 * 100.0
+    mean_conf = sum(c.confidence for c in claims) / len(claims)
+    coverage = min(1.0, len(claims) / 4.0)
+    return {
+        "R": round(r, 2),
+        "confidence": round(mean_conf * coverage, 4),
+        "num_claims": len(claims),
+    }

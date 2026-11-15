@@ -102,6 +102,16 @@ WB = {"USA": {"gdp_growth_pct": 2.8, "inflation_pct": 2.9, "public_debt_pct_gdp"
       "CAN": {"gdp_growth_pct": 1.2, "inflation_pct": 2.4, "unemployment_pct": 6.5}}
 
 
+PV = {"USA": -0.30, "CAN": 0.81, "CHN": 0.02, "JPN": 1.26, "KOR": 0.92, "DEU": 0.21, "GBR": 0.29, "MEX": -0.61,
+      "ISR": -0.91, "IND": -0.61, "FRA": -0.09, "BRA": -0.38}   # WGI political stability; no Taiwan, as in the API
+
+
+def wb_political_stability(as_of):
+    from tools.worldbank import WGI_PV
+    return {c: {"value": v, "year": int(as_of[:4]) - 1, "code": WGI_PV[0], "label": WGI_PV[1], "url": ""}
+            for c, v in PV.items()}
+
+
 def risk_section(ticker, as_of):
     return {"ticker": ticker, "form": "10-K", "filing_date": "2026-02-20", "section": "Item 1A",
             "url": f"https://www.sec.gov/Archives/{ticker}-10k.htm", "retrieved_at": "2026-11-14T00:00:00+00:00",
@@ -185,6 +195,7 @@ def install(monkeypatch):
     setp(filings, "_annual_filing", lambda t, a: TextFiling())
     setp(filings, "risk_section", risk_section)
     setp(worldbank, "indicators", wb_indicators)
+    setp(worldbank, "political_stability", wb_political_stability)
     setp(source_agent, "_check", lambda url: {"live": "imf.org" in url or "bankofcanada" in url, "final_url": url})
     setp(scenario_sources, "fetch_sources", fetch_sources)
     setp(scenario_sources, "gpr_snapshot", lambda week, on_event=None: {"error": "offline"})

@@ -41,7 +41,8 @@ def test_full_chain(env):
     assert 0 <= twn["g"] <= 1 and twn["gpr"] and "GPR" in twn["method"] and twn["driver"]
     # Cedric's formula, recomputed from the reported inputs: same objective and concern
     from tools.portfolio_score import portfolio_scores
-    again = portfolio_scores(*(r["inputs"][k] for k in ("A1", "A2", "A3")), "low_moderate", conf=tuple(r["conf"]))
+    again = portfolio_scores(*(r["inputs"][k] for k in ("A1", "A2", "A3")), "low_moderate", conf=tuple(r["conf"]),
+                             firm_share=r["firm_share"])
     assert (again["objective"], again["personalized"]) == (r["objective"], r["score"])
     assert r["inputs"]["A1"] is not None and r["inputs"]["A3"] == 1 / 8   # World Bank macro feeds A1; NVDA's flags A3
     assert all(0 <= h["R"] <= 100 for h in r["by_holding"]) and all(0 <= c["R"] <= 100 for c in r["by_country"])
