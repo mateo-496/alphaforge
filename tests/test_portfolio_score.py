@@ -86,8 +86,8 @@ class TestWorkedExample(unittest.TestCase):
 
     def test_main_example(self):
         result = portfolio_scores(0.45, 0.70, 0.55, 0.4, conf=(0.9, 0.6, 1.0))
-        self.assertEqual(result["objective"], 33.90)
-        self.assertEqual(result["personalized"], 30.73)
+        self.assertEqual(result["objective"], 58.74)
+        self.assertEqual(result["personalized"], 78.01)
         self.assertEqual(result["confidence"], 0.81)
 
 
@@ -215,26 +215,26 @@ class TestCalibrationPoints(unittest.TestCase):
 
     def test_uniform_03(self):
         r = portfolio_scores(0.3, 0.3, 0.3, 0.5)
-        self.assertAlmostEqual(r["objective"], 13.3, places=1)
+        self.assertAlmostEqual(r["objective"], 31.6, places=1)
 
     def test_uniform_07(self):
         r = portfolio_scores(0.7, 0.7, 0.7, 0.5)
-        self.assertAlmostEqual(r["objective"], 51.4, places=1)
+        self.assertAlmostEqual(r["objective"], 73.7, places=1)
 
     def test_uniform_09(self):
         r = portfolio_scores(0.9, 0.9, 0.9, 0.5)
-        self.assertAlmostEqual(r["objective"], 84.5, places=1)
+        self.assertAlmostEqual(r["objective"], 93.3, places=1)
 
     def test_uniform_08(self):
         r = portfolio_scores(0.8, 0.8, 0.8, 0.5)
-        self.assertAlmostEqual(r["objective"], 66.6, delta=0.5)
+        self.assertAlmostEqual(r["objective"], 83.9, delta=0.5)
 
     def test_same_portfolio_different_users(self):
         """A₁=A₂=A₃=0.5 with t∈{0.1, 0.5, 0.9}."""
         expected = {
-            0.1: {"objective": 28.48, "personalized": 56.39},
-            0.5: {"objective": 28.48, "personalized": 13.87},
-            0.9: {"objective": 28.48, "personalized": 1.97},
+            0.1: {"objective": 53.12, "personalized": 91.23},
+            0.5: {"objective": 53.12, "personalized": 56.45},
+            0.9: {"objective": 53.12, "personalized": 13.90},
         }
         for t, exp in expected.items():
             r = portfolio_scores(0.5, 0.5, 0.5, t)
@@ -373,3 +373,77 @@ class TestApplicationIntegration(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TestRangeAndRealism(unittest.TestCase):
+    """Guards against the score collapsing into a narrow band again."""
+
+    def test_uniform_inputs_map_near_themselves(self):
+        for x in (0.1, 0.3, 0.5, 0.7, 0.9):
+            r = portfolio_scores(x, x, x, 0.5)["objective"] / 100.0
+            self.assertLess(abs(r - x), 0.05, msg=f"uniform {x} -> {r}")
+
+    def test_full_range_used(self):
+        import itertools
+        grid = [i / 10 for i in range(11)]
+        objs = [portfolio_scores(a, b, c, 0.5, conf=(0.9, 0.9, 0.9))["objective"]
+                for a, b, c in itertools.product(grid, repeat=3)]
+        self.assertLess(min(objs), 10.0)
+        self.assertGreater(max(objs), 90.0)
+
+    def test_worst_block_dominates(self):
+        """One very risky block lifts the score above the plain weighted average."""
+        r = portfolio_scores(0.1, 0.9, 0.1, 0.5)["objective"] / 100.0
+        self.assertGreater(r, 0.6 * 0.1 + 0.4 * 0.9)
+
+
+class TestCalibrationHelpers(unittest.TestCase):
+    def test_calibrate_fixed_points(self):
+        from tools.portfolio_score import calibrate
+        for mid, k in ((0.4, 2.0), (0.5, 1.5), (0.3, 3.0)):
+            self.assertEqual(calibrate(0.0, mid, k), 0.0)
+            self.assertEqual(calibrate(1.0, mid, k), 1.0)
+            self.assertAlmostEqual(calibrate(mid, mid, k), 0.5, places=12)
+
+    def test_calibrate_identity(self):
+        from tools.portfolio_score import calibrate
+        for x in (0.1, 0.37, 0.8):
+            self.assertAlmostEqual(calibrate(x, 0.5, 1.0), x, places=12)
+
+    def test_calibrate_monotone(self):
+        from tools.portfolio_score import calibrate
+        xs = [i / 50 for i in range(51)]
+        ys = [calibrate(x, 0.4, 2.0) for x in xs]
+        self.assertEqual(ys, sorted(ys))
+
+    def test_power_mean(self):
+        from tools.portfolio_score import power_mean
+        self.assertIsNone(power_mean([], 2.0))
+        self.assertAlmostEqual(power_mean([(0.3, 1.0), (0.3, 2.0)], 2.0), 0.3)
+        self.assertAlmostEqual(power_mean([(0.2, 1.0), (0.8, 1.0)], 1.0), 0.5)
+        self.assertGreater(power_mean([(0.2, 1.0), (0.8, 1.0)], 2.0), 0.5)
+
+
+class TestScenarioRisk(unittest.TestCase):
+    def _inputs(self, weights, scenarios):
+        from tools.portfolio_score import extract_agent_inputs
+        assets = {"A": {"country_weights": {"TWN": 1.0}, "firm_score": 2.5},
+                  "B": {"country_weights": {"CAN": 1.0}, "firm_score": 2.5}}
+        countries = {"TWN": {"R": 68}, "CAN": {"R": 32}}
+        return extract_agent_inputs(weights, None, assets, countries, scenarios)
+
+    def test_scenarios_add_up(self):
+        """Adding a dangerous scenario never lowers A2 (a mean would dilute it)."""
+        s1 = {"likelihood": 0.1, "impact": 2, "countries": {"TWN": 1.0}}
+        s2 = {"likelihood": 0.3, "impact": 5, "countries": {"TWN": 1.0}}
+        a2_one = self._inputs({"A": 1.0}, [s1])[1]
+        a2_two = self._inputs({"A": 1.0}, [s1, s2])[1]
+        self.assertGreater(a2_two, a2_one)
+
+    def test_exposure_follows_weights(self):
+        """A stale precomputed exposure must not override the portfolio's own country mix."""
+        s = {"likelihood": 0.3, "impact": 5, "countries": {"TWN": 1.0}, "exposure": 0.9}
+        exposed = self._inputs({"A": 1.0}, [s])[1]
+        unexposed = self._inputs({"B": 1.0}, [s])[1]
+        self.assertGreater(exposed, 0.5)
+        self.assertEqual(unexposed, 0.0)

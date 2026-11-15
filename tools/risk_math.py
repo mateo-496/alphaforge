@@ -117,17 +117,26 @@ def watchlist(events: list[Event], weights: dict[str, float], assets: dict[str, 
 from core.schemas import AgentOutput  # noqa: E402  (import after other local defs)
 
 
-def q_bar_weighted(claims: list[Claim], channel_weights: dict[str, float] | None = None) -> float:
-    """Channel-weighted, confidence-weighted mean claim score ∈ [0, 5].
+#: Power-mean exponent used when turning claims into one score. p = 1 is the
+#: plain weighted mean; p = 3 lets one severe, well-sourced claim dominate a
+#: handful of minor ones (a firm with one 5/5 sanctions exposure is not "fine
+#: on average"), while all-equal claims still return that same score.
+CLAIM_POWER: float = 3.0
+
+
+def q_bar_weighted(claims: list[Claim], channel_weights: dict[str, float] | None = None,
+                   p: float = 1.0) -> float:
+    """Channel-weighted, confidence-weighted power mean of claim scores ∈ [0, 5].
 
     Equation
     --------
-    q = Σ_i (w_ch_i · c_i · s_i) / Σ_i (w_ch_i · c_i)
+    q = ( Σ_i (w_ch_i · c_i · s_i^p) / Σ_i (w_ch_i · c_i) )^{1/p}
 
     where
       w_ch_i  = channel_weights[channel_i] (1.0 if channel_weights is None)
       c_i     ∈ [0, 1]  confidence of claim i
       s_i     ∈ [0, 5]  severity score of claim i
+      p       ≥ 1       power (1 = weighted mean, the default)
 
     Returns 0.0 for empty claim lists (no score possible without evidence).
     """
@@ -139,8 +148,8 @@ def q_bar_weighted(claims: list[Claim], channel_weights: dict[str, float] | None
         ch_w = channel_weights.get(c.channel, 1.0) if channel_weights else 1.0
         w = ch_w * c.confidence
         total_w += w
-        total_ws += w * c.score
-    return total_ws / total_w if total_w > 0 else 0.0
+        total_ws += w * float(c.score) ** p
+    return (total_ws / total_w) ** (1.0 / p) if total_w > 0 else 0.0
 
 
 def score_filings(output: AgentOutput) -> dict[str, float]:
@@ -148,7 +157,7 @@ def score_filings(output: AgentOutput) -> dict[str, float]:
 
     Scoring equation
     ----------------
-    firm_score = q_bar_weighted(claims, FILINGS_CHANNEL_WEIGHTS)   ∈ [0, 5]
+    firm_score = q_bar_weighted(claims, FILINGS_CHANNEL_WEIGHTS, p=CLAIM_POWER)   ∈ [0, 5]
     confidence = (mean_claim_confidence) × min(1, n_claims / 5)    ∈ [0, 1]
 
     The coverage term (min(1, n/5)) shrinks confidence when fewer than 5
@@ -161,7 +170,7 @@ def score_filings(output: AgentOutput) -> dict[str, float]:
     claims = output.claims
     if not claims:
         return {"firm_score": 0.0, "confidence": 0.0, "num_claims": 0}
-    fs = q_bar_weighted(claims, FILINGS_CHANNEL_WEIGHTS)
+    fs = q_bar_weighted(claims, FILINGS_CHANNEL_WEIGHTS, p=CLAIM_POWER)
     mean_conf = sum(c.confidence for c in claims) / len(claims)
     coverage = min(1.0, len(claims) / 5.0)
     return {
@@ -176,7 +185,7 @@ def score_geopolitical(output: AgentOutput) -> dict[str, float]:
 
     Scoring equation
     ----------------
-    R = q_bar_weighted(claims, GEO_CHANNEL_WEIGHTS) / 5 × 100   ∈ [0, 100]
+    R = q_bar_weighted(claims, GEO_CHANNEL_WEIGHTS, p=CLAIM_POWER) / 5 × 100   ∈ [0, 100]
     confidence = (mean_claim_confidence) × min(1, n_claims / 4)  ∈ [0, 1]
 
     The coverage term reaches 1 at 4+ claims (GPR analysis typically yields
@@ -189,7 +198,7 @@ def score_geopolitical(output: AgentOutput) -> dict[str, float]:
     claims = output.claims
     if not claims:
         return {"R": 0.0, "confidence": 0.0, "num_claims": 0}
-    q = q_bar_weighted(claims, GEO_CHANNEL_WEIGHTS)
+    q = q_bar_weighted(claims, GEO_CHANNEL_WEIGHTS, p=CLAIM_POWER)
     r = q / 5.0 * 100.0
     mean_conf = sum(c.confidence for c in claims) / len(claims)
     coverage = min(1.0, len(claims) / 4.0)

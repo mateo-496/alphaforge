@@ -259,8 +259,17 @@ class TestEndToEndIntegration(unittest.TestCase):
             scenarios=self.scenarios,
         )
         
-        # Should have lower risk than mixed portfolio
-        self.assertLess(result["objective"], 35.0)
+        mixed = calculate_portfolio_risk(
+            weights=self.weights,
+            profile=self.profile_moderate,
+            assets=self.assets,
+            countries=self.countries,
+            scenarios=self.scenarios,
+        )
+        # Should have much lower risk than the mixed portfolio. Not near zero:
+        # the fixture's "global recession" scenario (25%, CAN intensity 0.5) still hits it.
+        self.assertLess(result["objective"], 40.0)
+        self.assertLess(result["objective"], mixed["objective"] - 30.0)
         
         # Country index risk (firm scores) should be low
         self.assertLess(result["components"]["a3_country_index_risk"], 15.0)

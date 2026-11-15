@@ -157,8 +157,9 @@ class TestScoreFilings:
         c_low  = _make_claim("financial_stress", score=1, confidence=1.0)
         out = _make_output("filings", "X", [c_high, c_low])
         result = score_filings(out)
-        # Channel-weighted: (1.4*1*5 + 0.9*1*1)/(1.4*1 + 0.9*1) = (7+0.9)/(2.3) ≈ 3.43
-        expected = (1.4 * 5 + 0.9 * 1) / (1.4 + 0.9)
+        # Channel-weighted cubic power mean: ((1.4·5³ + 0.9·1³)/(1.4 + 0.9))^(1/3) ≈ 4.24
+        expected = ((1.4 * 5**3 + 0.9 * 1**3) / (1.4 + 0.9)) ** (1 / 3)
+        assert expected > (1.4 * 5 + 0.9 * 1) / (1.4 + 0.9)  # severe claim is not averaged away
         assert math.isclose(result["firm_score"], expected, rel_tol=1e-4)
 
 
@@ -222,8 +223,8 @@ class TestScoreGeopolitical:
         c_reg      = _make_claim("regulatory",        score=1, confidence=1.0)
         out = _make_output("geopolitical", "X", [c_conflict, c_reg])
         result = score_geopolitical(out)
-        # channel-weighted: (1.5*5 + 0.8*1)/(1.5+0.8) = (7.5+0.8)/2.3 ≈ 3.6087
-        expected_q = (1.5 * 5 + 0.8 * 1) / (1.5 + 0.8)
+        # channel-weighted cubic power mean: ((1.5·5³ + 0.8·1³)/(1.5+0.8))^(1/3) ≈ 4.34
+        expected_q = ((1.5 * 5**3 + 0.8 * 1**3) / (1.5 + 0.8)) ** (1 / 3)
         expected_R = expected_q / 5.0 * 100.0
         assert math.isclose(result["R"], expected_R, rel_tol=1e-4)
 
@@ -255,9 +256,11 @@ class TestAgentOutputIntegration:
             countries={},
             scenarios=[],
         )
-        # a3 should match what score_filings computed, normalised to [0,1]
-        assert math.isclose(a3, expected["firm_score"] / 5.0, rel_tol=1e-4), (
-            f"a3={a3}, expected={expected['firm_score']/5.0}"
+        # a3 = calibrated firm_score/5 (single holding → power mean is the value itself)
+        from tools.portfolio_score import Params, calibrate
+        want = calibrate(expected["firm_score"] / 5.0, Params().m3, Params().k3)
+        assert math.isclose(a3, want, rel_tol=1e-4), (
+            f"a3={a3}, expected={want}"
         )
         assert 0.0 <= a3 <= 1.0
 
@@ -281,9 +284,11 @@ class TestAgentOutputIntegration:
             countries={"TWN": out},   # AgentOutput directly
             scenarios=[],
         )
-        # a1 should be expected_R / 100 since NVDA has 100% TWN exposure
-        assert math.isclose(a1, expected_R / 100.0, rel_tol=1e-4), (
-            f"a1={a1}, expected={expected_R/100.0}"
+        # a1 = calibrated R/100 since NVDA has 100% TWN exposure
+        from tools.portfolio_score import Params, calibrate
+        want = calibrate(expected_R / 100.0, Params().m1, Params().k1)
+        assert math.isclose(a1, want, rel_tol=1e-4), (
+            f"a1={a1}, expected={want}"
         )
         assert 0.0 <= a1 <= 1.0
 

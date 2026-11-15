@@ -2,19 +2,18 @@
 
 Score pipeline
 --------------
-A3 (firm exposure risk):
-    score_filings(output)   →  firm_score ∈ [0, 5]
-    q = Σ(w_ch · c · s) / Σ(w_ch · c)   where w_ch = FILINGS_CHANNEL_WEIGHTS
-    A3 = firm_score / 5                   ∈ [0, 1]
+Claims → one score per entity (channel- and confidence-weighted cubic power mean,
+so one severe claim is not averaged away by several minor ones):
+    q = (Σ w_ch·c·s³ / Σ w_ch·c)^(1/3)          ∈ [0, 5]
+    firm_score = q (FILINGS_CHANNEL_WEIGHTS),  R = q/5·100 (GEO_CHANNEL_WEIGHTS)
 
-A1 (national / country risk):
-    score_geopolitical(output)  →  R ∈ [0, 100]
-    q = Σ(w_ch · c · s) / Σ(w_ch · c)   where w_ch = GEO_CHANNEL_WEIGHTS
-    R = q / 5 × 100,  A1 = portfolio-exposure-weighted mean(R) / 100
+A1 (country risk)   = g(M₂(R_c/100 ; X_c), m₁)      exposure-weighted, calibrated
+A2 (scenario risk)  = 1 − exp(−EL / EL_ref),  EL = Σ likelihood·impact/5·exposure
+                      (falls back to A1 when no scenarios are available)
+A3 (firm risk)      = g(M₂(firm_i/5 ; w_i), m₃)     holding-weighted, calibrated
 
-A2 (geopolitical scenario risk):
-    From scenario sets: Σ(exp · likelihood · impact/5) / n_scenarios
-    Falls back to A1 when no scenarios are available.
+M₂ is a weighted quadratic mean (hotspots dominate) and g an odds-ratio S-curve
+that sends the typical level m to 0.5. See tools/portfolio_score.py.
 
 Final score via tools.portfolio_score.calculate_portfolio_risk (deterministic 2-stage formula).
 Identical inputs always produce identical scores.
