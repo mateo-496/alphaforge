@@ -1,4 +1,7 @@
 from config import COUNTRY_API_URL, COUNTRY_API_KEY, USE_DEMO_DATA
+import os
+
+from tools import worldbank
 from tools.http_utils import get_json
 
 COUNTRY_DEMO_PROFILES = {
@@ -65,8 +68,16 @@ def get_country_data(country: str) -> dict:
             raw = raw[0] if raw else {}
         return normalize_country_data(raw, country)
 
+    if os.environ.get("USE_WORLD_BANK", "1") == "1":
+        try:
+            data = worldbank.country_data(country)
+        except Exception:
+            data = None
+        if data and any(k in data for k in worldbank.COUNTRY_INDICATORS):
+            return data
+
     if not USE_DEMO_DATA:
-        raise RuntimeError("COUNTRY_API_URL is not configured and demo mode is disabled.")
+        raise RuntimeError("No country data source is available and demo mode is disabled.")
 
     profile = COUNTRY_DEMO_PROFILES.get(country.strip().lower(), {
         "gdp_growth_pct": 2.0,

@@ -35,6 +35,31 @@ def claim_quality(claims: list[Claim]) -> Optional[float]:
     return sum(c.confidence * c.score for c in claims) / (5 * w) if w else None
 
 
+def filing_risk(claims: list[Claim], top: int = 3) -> Optional[float]:
+    """F_i on [0, 1]: half the confidence-weighted mean severity of all filing claims, half that of the `top`
+    most severe ones (severity x confidence). The mean alone would let many minor risks dilute one grave risk."""
+    if not claims:
+        return None
+    worst = sorted(claims, key=lambda c: c.score * c.confidence, reverse=True)[:top]
+    return 0.5 * claim_quality(claims) + 0.5 * claim_quality(worst)
+
+
+# Fixed, documented bounds (not fitted to the portfolio): annualised volatility 10%-60%, beta 0.5-2.0.
+VOL_BOUNDS = (0.10, 0.60)
+BETA_BOUNDS = (0.5, 2.0)
+
+
+def _scale(x: float, bounds: tuple[float, float]) -> float:
+    low, high = bounds
+    return min(1.0, max(0.0, (x - low) / (high - low)))
+
+
+def market_risk(vol_1y: Optional[float], beta: Optional[float]) -> Optional[float]:
+    """M_i on [0, 1]: mean of the volatility and beta scores, each linear between fixed bounds. None if both unknown."""
+    parts = [_scale(v, b) for v, b in ((vol_1y, VOL_BOUNDS), (beta, BETA_BOUNDS)) if v is not None]
+    return sum(parts) / len(parts) if parts else None
+
+
 def _blend(values: dict[str, Optional[float]], weights: dict[str, float]) -> tuple[float, dict[str, float]]:
     """Weighted mean over the available values; weights are renormalised, a missing value never counts as 0.
     Returns (score, contribution of each used component, summing to score)."""
@@ -63,15 +88,17 @@ def asset_risk(w_ic: dict[str, float], R: dict[str, float], filing: Optional[flo
                ) -> tuple[float, dict[str, float], dict[str, float]]:
     """G_i = a * sum_c w_ic R_c + b * F_i + c * M_i, with F_i the filing-risk score and M_i the market-risk score.
     Revenue shares that are unknown or in unscored countries (incl. 'Other', and any share missing from w_ic)
-    take the mean R of the scored countries, never 0. Returns (G_i, component contributions, per-country contributions)."""
+    take the mean R of the scored countries, never 0; with no known split the exposure term is omitted. Returns (G_i, component contributions, per-country contributions)."""
     if any(w < 0 for w in w_ic.values()) or sum(w_ic.values()) > 1 + 1e-9:
         raise ValueError("revenue shares must be non-negative and sum to at most 1")
-    if not R:
-        raise ValueError("at least one country risk is required")
-    default = sum(R.values()) / len(R)
-    shares = {**w_ic, "Other": w_ic.get("Other", 0.0) + max(0.0, 1.0 - sum(w_ic.values()))}
-    per_country = {c: w * R.get(c, default) for c, w in shares.items() if w > 0}
-    score, contrib = _blend({"exposure": sum(per_country.values()), "filing": filing, "market": market}, weights)
+    per_country: dict[str, float] = {}
+    exposure: Optional[float] = None
+    if R and sum(w_ic.values()) > 0:  # with no known revenue split at all, the exposure term is missing, not guessed
+        default = sum(R.values()) / len(R)
+        shares = {**w_ic, "Other": w_ic.get("Other", 0.0) + max(0.0, 1.0 - sum(w_ic.values()))}
+        per_country = {c: w * R.get(c, default) for c, w in shares.items() if w > 0}
+        exposure = sum(per_country.values())
+    score, contrib = _blend({"exposure": exposure, "filing": filing, "market": market}, weights)
     return score, contrib, per_country
 
 

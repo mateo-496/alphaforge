@@ -18,3 +18,8 @@ def no_real_country_risk_inputs(monkeypatch):
         raise RuntimeError("network disabled in tests")
     monkeypatch.setattr(country_risk_inputs, "_gpr_frame", offline)
     monkeypatch.setattr(country_risk_inputs, "stress_percentile", offline)
+
+
+@pytest.fixture(autouse=True)
+def no_real_world_bank(monkeypatch):
+    monkeypatch.setenv("USE_WORLD_BANK", "0")
