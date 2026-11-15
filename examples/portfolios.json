@@ -1,5 +1,67 @@
 {
  "_doc": "Sample portfolios, North American investor POV. Countries ISO3. 'country' = domicile/home market; 'ops' = main operating countries when different; ETFs: 'primary_countries' is a qualitative look-through hint (use issuer holdings files for weights). Tickers are US/TSX/OTC listings checked as of mid-2026; verify at as_of.",
+ "showcase_portfolios": [
+  {
+   "id": "qc-retiree-income", "label": "The Bunker",
+   "profile": {"persona": "Retiree prioritizing capital preservation", "base_currency": "CAD", "risk_tolerance": "low", "horizon_years": 4, "objective": "capital preservation", "max_single_holding": 0.25},
+   "holdings": [{"ticker": "ZST.TO", "weight": 0.50}, {"ticker": "XBB.TO", "weight": 0.35}, {"ticker": "GLD", "weight": 0.15}],
+   "geo_angle": "A defensive bond-heavy portfolio with a gold allocation; interest-rate and gold risks remain."
+  },
+  {
+   "id": "global-tech-growth", "label": "The Taiwan Chokepoint",
+   "profile": {"persona": "Long-horizon technology investor", "base_currency": "USD", "risk_tolerance": "high", "horizon_years": 25, "objective": "growth", "max_single_holding": 0.25},
+   "holdings": [{"ticker": "NVDA", "weight": 0.30}, {"ticker": "TSM", "weight": 0.30}, {"ticker": "ASML", "weight": 0.25}, {"ticker": "MSFT", "weight": 0.10}, {"ticker": "BTC", "weight": 0.05}],
+   "geo_angle": "A concentrated semiconductor supply-chain bet with Taiwan exposure and a small crypto allocation."
+  },
+  {
+   "id": "global-balanced", "label": "The Shock Absorber",
+   "profile": {"persona": "Globally diversified balanced investor", "base_currency": "USD", "risk_tolerance": "moderate", "horizon_years": 12, "objective": "balanced", "max_single_holding": 0.25},
+   "holdings": [{"ticker": "BND", "weight": 0.30}, {"ticker": "XBB.TO", "weight": 0.20}, {"ticker": "SPY", "weight": 0.20}, {"ticker": "VXUS", "weight": 0.20}, {"ticker": "GLD", "weight": 0.10}],
+   "geo_angle": "Bonds, global equities and gold spread exposures across assets and regions."
+  },
+  {
+   "id": "asia-pacific-conviction", "label": "The China Crossfire",
+   "profile": {"persona": "Asia-focused growth investor", "base_currency": "USD", "risk_tolerance": "high", "horizon_years": 15, "objective": "growth", "max_single_holding": 0.25},
+   "holdings": [{"ticker": "BABA", "weight": 0.35}, {"ticker": "TCEHY", "weight": 0.30}, {"ticker": "JD", "weight": 0.20}, {"ticker": "TSM", "weight": 0.15}],
+   "geo_angle": "Concentrated Chinese platform holdings and Taiwan semiconductor exposure create a distinct regional bet."
+  },
+  {
+   "id": "friendshoring-ex-china", "label": "The China Detour",
+   "profile": {"persona": "Investor seeking supply-chain diversification away from China", "base_currency": "USD", "risk_tolerance": "moderate-high", "horizon_years": 12, "objective": "growth", "max_single_holding": 0.25, "max_country": {"CHN": 0}},
+   "holdings": [{"ticker": "HDB", "weight": 0.25}, {"ticker": "AMX", "weight": 0.20}, {"ticker": "INFY", "weight": 0.20}, {"ticker": "TSM", "weight": 0.20}, {"ticker": "SPY", "weight": 0.15}],
+   "geo_angle": "India and Mexico holdings alongside Taiwan and US exposure; indirect China revenue may remain."
+  },
+  {
+   "id": "resources-real-assets", "label": "The Commodity Supercycle",
+   "profile": {"persona": "Resource-focused investor", "base_currency": "CAD", "risk_tolerance": "high", "horizon_years": 15, "objective": "inflation hedge", "max_single_holding": 0.25},
+   "holdings": [{"ticker": "PBR", "weight": 0.25}, {"ticker": "VALE", "weight": 0.25}, {"ticker": "CNQ", "weight": 0.20}, {"ticker": "XOM", "weight": 0.15}, {"ticker": "GLD", "weight": 0.15}],
+   "geo_angle": "A concentrated oil and mining portfolio exposed to commodity prices and policy across several markets."
+  },
+  {
+   "id": "em-income", "label": "The Yield Trap",
+   "profile": {"persona": "Income investor seeking emerging-market yield", "base_currency": "USD", "risk_tolerance": "moderate-high", "horizon_years": 10, "objective": "income", "max_single_holding": 0.25},
+   "holdings": [{"ticker": "EMB", "weight": 0.35}, {"ticker": "VWOB", "weight": 0.30}, {"ticker": "EMLC", "weight": 0.25}, {"ticker": "GLD", "weight": 0.10}],
+   "geo_angle": "Emerging-market debt concentration exposes the income strategy to sovereign and currency risks."
+  },
+  {
+   "id": "esg-endowment", "label": "Clean Hands, Tight Limits",
+   "profile": {"persona": "Endowment with explicit exclusions", "base_currency": "USD", "risk_tolerance": "moderate", "horizon_years": 20, "objective": "preserve real value", "max_single_holding": 0.25, "exclusions": ["fossil_fuels", "weapons"]},
+   "holdings": [{"ticker": "ESGV", "weight": 0.35}, {"ticker": "ESGD", "weight": 0.25}, {"ticker": "ESGE", "weight": 0.20}, {"ticker": "BND", "weight": 0.20}],
+   "geo_angle": "A global ESG-screened fund mix with exclusions that constrain possible replacements."
+  },
+  {
+   "id": "geopolitical-hedger", "label": "The Gold-Plated Fortress",
+   "profile": {"persona": "Family office focused on capital preservation", "base_currency": "USD", "risk_tolerance": "low-moderate", "horizon_years": 8, "objective": "capital preservation", "max_single_holding": 0.25},
+   "holdings": [{"ticker": "GLD", "weight": 0.35}, {"ticker": "TLT", "weight": 0.25}, {"ticker": "XBB.TO", "weight": 0.20}, {"ticker": "SPY", "weight": 0.20}],
+   "geo_angle": "A gold-heavy defensive allocation retains interest-rate, gold-price and equity exposure."
+  },
+  {
+   "id": "frontier-latam-africa-gulf", "label": "Frontier Fault Lines",
+   "profile": {"persona": "Tactical frontier-markets investor", "base_currency": "USD", "risk_tolerance": "high", "horizon_years": 10, "objective": "growth", "max_single_holding": 0.25},
+   "holdings": [{"ticker": "KSA", "weight": 0.25}, {"ticker": "QAT", "weight": 0.15}, {"ticker": "AFK", "weight": 0.20}, {"ticker": "PBR", "weight": 0.20}, {"ticker": "MTNOY", "weight": 0.20}],
+   "geo_angle": "A concentrated Gulf, African and Brazilian mix with distinct commodity and regional exposures."
+  }
+ ],
  "regions": {
   "North America": [
    "USA",
