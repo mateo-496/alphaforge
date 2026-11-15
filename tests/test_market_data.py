@@ -205,3 +205,28 @@ def test_price_history_uses_adjusted_prices_and_cites_currency(monkeypatch):
 def test_price_history_rejects_future_dates():
     with pytest.raises(ValueError, match="Invalid as_of"):
         market_data.get_price_history("MSFT", (date.today() + timedelta(days=1)).isoformat())
+
+
+def test_combined_china_hong_kong_label_is_attributed_to_china():
+    assert market_data._geo_parser._resolve_seg("China (including Hong Kong)") == "CN"
+    assert market_data._geo_parser._resolve_seg("China (including Hong Kong) (2)") == "CN"
+    assert market_data._geo_parser._resolve_seg("Hong Kong") == "HK"
+
+
+def _two_tables(monkeypatch, results):
+    _mock_geography_tables(monkeypatch, ["2025 2024 2023"] * len(results))
+    outputs = iter(results)
+    monkeypatch.setattr("tools.market_data.geo.parse_geo_table",
+                        lambda table, html, year: {"fiscal_year": year, "segments": next(outputs)})
+
+
+def test_exposures_prefer_fullest_consistent_table(monkeypatch):
+    _two_tables(monkeypatch, [[("US", 69.0), ("TW", 20.0), ("CN", 9.0)], [("US", 69.0), ("CN", 9.0)]])
+    result = market_data.get_country_exposures("ASML")
+    assert {e["country"] for e in result["exposures"]} == {"US", "TW", "CN"}
+
+
+def test_exposures_with_contradicting_tables_need_review(monkeypatch):
+    _two_tables(monkeypatch, [[("US", 69.0), ("CN", 9.0)], [("US", 60.0), ("CN", 9.0)]])
+    with pytest.raises(ValueError, match="Conflicting"):
+        market_data.get_country_exposures("ASML")

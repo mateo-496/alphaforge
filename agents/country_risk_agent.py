@@ -8,6 +8,7 @@ from storage.s3_service import save_json
 from tools.bank_api import get_bank_data
 from tools.bedrock_service import explain_risk, generate_insights_with_bedrock
 from tools.country_api import get_country_data
+from tools.country_risk_inputs import country_risk_score
 from tools.risk_calculator import calculate_risk
 from tools.sovereign_risk import country_risk
 
@@ -63,20 +64,25 @@ def analyze_country(country: str, bank: Optional[str] = None) -> CountryReport:
     # 4. Synthesize Bedrock explanation
     explanation = explain_risk(country, assessment, country_data, bank_data)
 
-    # 5. Build Indicators contract
+    # 5. Build Indicators contract from measured inputs only (GPR, global stress); EPU is not sourced yet
     stress_val = float(assessment.get("score") or r_c)
-    gpr_val = round(90.0 + (stress_val * 0.4), 2)
-    gpr_z_val = round((gpr_val - 100.0) / 12.0, 2)
-    epu_val = round(105.0 + (stress_val * 0.8), 2)
-    vol_val = round(14.0 + (stress_val * 0.12), 2)
-
+    try:
+        measured = country_risk_score(country, as_of_date)
+    except Exception:
+        logger.exception("Measured country risk inputs unavailable for %s", country)
+        measured = None
+    gpr_info = measured["gpr"] if measured else None
+    stress_info = measured["stress"] if measured else None
     indicators = Indicators(
-        gpr=gpr_val,
-        gpr_z=gpr_z_val,
-        epu=epu_val,
-        vol_index=vol_val,
+        gpr=round(gpr_info["current_12m_mean"], 4) if gpr_info else None,
+        gpr_z=None,
+        epu=None,
+        vol_index=round(stress_info["latest"], 4) if stress_info else None,
         stress=round(stress_val, 2)
     )
+    if measured:
+        # R_c on 0-100 from percentile-ranked GPR and global stress; the macro score stays in `stress`
+        r_c = 100.0 * measured["score"]
 
     # 6. Generate grounded Claim instances
     claims: list[Claim] = []

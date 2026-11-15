@@ -10,6 +10,7 @@ from typing import Any
 from urllib.parse import quote
 
 import edgar_geo_revenue as geo
+from edgar_geo_revenue import _parser as _geo_parser
 import httpx
 import yfinance as yf
 
@@ -84,6 +85,24 @@ def _ticker_map() -> dict[str, Any]:
     return cached("sec-tickers", {}, lambda: _sec_get("https://www.sec.gov/files/company_tickers.json").json())
 
 
+# Filers such as NVIDIA report one combined "China (including Hong Kong)" line. The parser skips any label
+# naming two places, which silently drops the whole China exposure. Hong Kong is a SAR of China, so these
+# explicit labels are attributed to CN (the share is then slightly overstated for CN, never lost).
+_CHINA_INCLUDING_HK = ("china (including hong kong)", "china (including hong kong and macau)",
+                       "china including hong kong", "china, including hong kong",
+                       "china and hong kong", "china & hong kong", "mainland china and hong kong",
+                       "china (including hong kong sar)", "china, hong kong and macau")
+
+
+def _register_china_labels() -> None:
+    for label in _CHINA_INCLUDING_HK:
+        geo.SEG_MAP.setdefault(label, "CN")
+    _geo_parser._SEG_MAP_BY_LEN = sorted(geo.SEG_MAP.items(), key=lambda kv: -len(kv[0]))
+
+
+_register_china_labels()
+
+
 def _oldest_year_first(table, fiscal_year: int) -> bool:
     for row in table.find_all("tr")[:4]:
         years = list(dict.fromkeys(
@@ -153,13 +172,17 @@ def get_country_exposures(ticker: str) -> dict[str, Any]:
             status = "unsupported_fiscal_year_order" if skipped_year_order else "no_country_revenue_found"
             return {"ticker": ticker, "status": status, "exposures": [],
                     "filing_url": base, "fiscal_year": fiscal_year}
-        shares, title, url, reported_year = candidates[0]
-        if any(candidate[0] != shares for candidate in candidates[1:]):
-            raise ValueError(f"Conflicting geographic revenue tables for {ticker}; manual review required")
+        # Tables may differ only by coverage (one drops a row the other keeps): take the fullest one,
+        # but any country present in two tables must carry the same share, otherwise review is needed.
+        shares, title, url, reported_year = max(candidates, key=lambda c: sum(v for _, v in c[0]))
+        best = dict(shares)
+        for other, *_ in candidates:
+            if any(c in best and abs(best[c] - v) > 1e-6 for c, v in other):
+                raise ValueError(f"Conflicting geographic revenue tables for {ticker}; manual review required")
         source = _source(f"{ticker} SEC annual filing", url, f"{title}; fiscal year {reported_year}")
         return {"ticker": ticker, "status": "available", "fiscal_year": reported_year,
                 "exposures": [{"country": country, "revenue_share": share,
                                "source": source.model_dump(mode="json")}
                               for country, share in shares]}
 
-    return cached("sec-exposures", {"ticker": ticker}, fetch)
+    return cached("sec-exposures", {"ticker": ticker, "parser": 2}, fetch)
