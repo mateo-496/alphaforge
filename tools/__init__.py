@@ -12,6 +12,14 @@ from .country_domains import (
 )
 from .bedrock_service import explain_risk, generate_insights_with_bedrock
 from .http_utils import get_json
+from .portfolio_score import (
+    Params as PortfolioParams,
+    TOLERANCE_MAP,
+    calculate_portfolio_risk,
+    extract_agent_inputs,
+    parse_tolerance,
+    portfolio_scores,
+)
 
 __all__ = [
     "get_country_data",
@@ -29,4 +37,10 @@ __all__ = [
     "explain_risk",
     "generate_insights_with_bedrock",
     "get_json",
+    "PortfolioParams",
+    "portfolio_scores",
+    "calculate_portfolio_risk",
+    "extract_agent_inputs",
+    "parse_tolerance",
+    "TOLERANCE_MAP",
 ]

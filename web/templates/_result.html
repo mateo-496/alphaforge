@@ -1,30 +1,24 @@
 <div class="result">
-  {% set ax = annexes(r) %}
   <section class="headline">
     <div class="score">
       <span class="score-num mono">{{ "%.0f"|format(r.score) }}</span><span class="score-of">/100</span>
-      <span class="score-level level-{{ r.level|replace(' ', '-') }}">{{ r.level|capitalize }}</span>
+      <span class="score-level level-{{ r.level }}">{{ r.level|capitalize }}</span>
+      {% if r.objective_score is defined %}
+      <div class="score-sub small muted" style="margin-top: 6px; font-size: 13px; color: var(--muted, #666); flex-basis: 100%;">
+        Objective Risk: {{ "%.0f"|format(r.objective_score) }}/100 &middot; Confidence: {{ "%.0f"|format(r.confidence * 100) }}%
+      </div>
+      {% endif %}
     </div>
     <div class="summary">
       {% for s in r.summary %}<p>{{ s }}</p>{% endfor %}
-      <p class="mock-note">{% if r.summary_by == "risk agent" %}Written by the risk agent from the computed figures; every number is checked against them.{% else %}Summary built from the computed figures.{% endif %}
-        {% if r.n_estimated %}{{ r.n_estimated }} of {{ r.by_holding|length }} holdings have no filing-based country split and use an estimate.{% endif %}</p>
+      {% if r.mock %}<p class="mock-note">Company exposures and country risk are placeholders until those agents are connected.</p>{% endif %}
     </div>
-  </section>
-
-  {% set v = r.verdict %}
-  <section class="verdict verdict-{{ v.status }}">
-    <p class="verdict-title">{% if v.status == "clear" %}No immediate danger{% elif v.status == "watch" %}Hold, and watch the markets{% else %}Changes suggested{% endif %}</p>
-    <p class="verdict-text">{% if v.status == "clear" %}Every test passes for this profile. Nothing needs to change; run the analysis again if the markets or the scenarios move.
-      {% elif v.status == "watch" %}The portfolio is within the profile's limits, but markets are under stress, which makes any shock costlier. No trade is needed now.
-      {% else %}At least one test fails. The recommendations below fix it within the profile's limits.{% endif %}</p>
-    <ul class="tests">{% for t in v.tests %}<li class="{{ 'ok' if t.ok else 'fail' }}"><span class="mark">{{ "✓" if t.ok else "✕" }}</span>{{ t.name }}<span class="mono">{{ t.value }}</span></li>{% endfor %}</ul>
   </section>
 
   {% if r.checks %}
   <section class="block coll">
     <div class="block-head"><span class="block-no">01</span><h2><button type="button" class="block-toggle" aria-expanded="true">Conflicts with the profile<i class="chev"></i></button></h2>
-      <p>Stated limits and preferences the portfolio already breaks, before any geopolitical shock.</p></div>
+      <p>Stated limits the portfolio already breaks, before any geopolitical shock.</p></div>
     <div class="block-body">
       <ol class="checks-list">{% for c in r.checks %}<li>{{ c.text }}</li>{% endfor %}</ol>
     </div>
@@ -33,19 +27,17 @@
 
   <section class="block coll">
     <div class="block-head"><span class="block-no">02</span><h2><button type="button" class="block-toggle" aria-expanded="true">Where the risk comes from<i class="chev"></i></button></h2>
-      <p>Points each holding adds to the score: its weight × the hazard of the countries it earns in × the market amplifier, plus its filing flags when the filing was read. The points add up to the score. The tick marks its weight.</p></div>
+      <p>Each holding's risk combines the political risk of the countries it earns revenue in and its own filing disclosures. The tick marks its weight.</p></div>
     <div class="block-body">
       <table class="data">
-        <thead><tr><th>Ticker</th><th>Name</th><th class="num">Weight</th><th class="num">Holding score</th><th class="num">Points</th><th>Exposure</th><th class="share-col">Share of the score</th></tr></thead>
+        <thead><tr><th>Ticker</th><th>Name</th><th class="num">Weight</th><th class="num">Risk</th><th class="share-col">Share of portfolio risk</th></tr></thead>
         <tbody>
-          {% set maxc = r.by_holding[0].contribution or 1 %}
+          {% set maxc = r.by_holding[0].contribution %}
           {% for h in r.by_holding %}
           <tr class="{% if h.contribution > h.weight * 1.2 %}flag{% endif %}{% if loop.index > 5 %} more{% endif %}">
             <td class="mono">{{ h.ticker }}</td><td>{{ h.name }}</td>
             <td class="num mono">{{ "%.1f"|format(h.weight * 100) }}%</td>
             <td class="num mono">{{ "%.0f"|format(h.G) }}</td>
-            <td class="num mono">{{ "%.1f"|format(h.points) }}</td>
-            <td class="small expo">{% if not h.estimated %}{% set L = ax.by_url.get(h.source_url) %}SEC filing{% if L %}<a class="annex-ref mono" href="#annex-{{ L }}">{{ L }}</a>{% endif %}{% else %}<span class="muted" title="{{ h.method }}">estimated</span>{% endif %}</td>
             <td class="share-col"><span class="share"><span class="bar" style="width: {{ (h.contribution / maxc * 100)|round(1) }}%"></span><i class="tick" style="left: {{ (h.weight / maxc * 100)|round(1) if h.weight < maxc else 100 }}%"></i></span><span class="mono share-num">{{ "%.0f"|format(h.contribution * 100) }}%</span></td>
           </tr>
           {% endfor %}
@@ -55,113 +47,57 @@
     </div>
   </section>
 
-  {% if r.firms %}
   <section class="block coll">
-    <div class="block-head"><span class="block-no">03</span><h2><button type="button" class="block-toggle" aria-expanded="true">Company disclosures<i class="chev"></i></button></h2>
-      <p>The filings agent read the risk factors of the largest holdings' latest annual filing. A channel counts only when its quote is found word for word in the filing (checked by code); the score uses the share of the 8 channels flagged, not the agent's own grades.</p></div>
+    <div class="block-head"><span class="block-no">03</span><h2><button type="button" class="block-toggle" aria-expanded="true">Countries<i class="chev"></i></button></h2>
+      <p>Share of portfolio revenue earned in each country, and that country's political risk on the analysis date.</p></div>
     <div class="block-body">
-      {% for t, f in r.firms.items() %}
-      <div class="firm">
-        <div class="firm-head">
-          <span class="mono firm-ticker">{{ t }}</span>
-          {% if f.status == "ok" %}
-          {% set nch = (f.channels or [])|length %}
-          <span class="sev"><span class="m-track"><i class="m-fill" style="width: {{ nch / 8 * 100 }}%"></i></span><span class="mono small">{{ nch }}/8 channels</span></span>
-          {% if f.channels %}<span class="small">{% for c in f.channels %}<span class="chan">{{ c|replace("_", " ") }}</span> {% endfor %}</span>{% endif %}
-          {% set L = ax.by_url.get(f.filing.url) if f.filing else None %}
-          <span class="muted small">{{ f.n_verified }}/{{ f.n_claims }} quotes verified{% if L %} · filing<a class="annex-ref mono" href="#annex-{{ L }}">{{ L }}</a>{% endif %}</span>
-          {% elif f.status == "pending" %}<span class="muted small">Still being read; included in the next analysis</span>
-          {% else %}<span class="muted small" title="{{ f.error or '' }}">Filing not available to the agent</span>{% endif %}
-        </div>
-        {% if f.claims %}
-        <ul class="firm-claims">
-          {% for c in f.claims[:3] %}
-          <li><span class="chan">{{ c.channel|replace("_", " ") }}</span> {{ c.statement }}
-            {% if c.quote %}<span class="quote{% if not c.verified %} unverified{% endif %}" title="{{ c.locator }}">“{{ c.quote|truncate(180, true, "…", 0) }}”{% if not c.verified %} <em>not verified</em>{% endif %}</span>{% endif %}</li>
-          {% endfor %}
-        </ul>
-        {% endif %}
-      </div>
-      {% endfor %}
-    </div>
-  </section>
-  {% endif %}
-
-  <section class="block coll">
-    <div class="block-head"><span class="block-no">04</span><h2><button type="button" class="block-toggle" aria-expanded="true">Countries<i class="chev"></i></button></h2>
-      <p>Share of portfolio revenue earned in each country, and its hazard: how its geopolitical-risk index (GPR) on the analysis date ranks among its own past months.
-        Points = revenue share × hazard × market amplifier × 100 (× 0.8 for companies whose filing was read). Drivers are written by the geopolitical agent from those facts.</p></div>
-    <div class="block-body">
-      {% set gL = ax.by_url.get(r.country_meta.gpr.url) if r.country_meta and r.country_meta.gpr else None %}
       <table class="data">
-        <thead><tr><th>Country</th><th class="num">Revenue</th><th class="num" title="GPR percentile vs. own history">Hazard{% if gL %}<a class="annex-ref mono" href="#annex-{{ gL }}">{{ gL }}</a>{% endif %}</th><th class="num">Points</th><th>Driver</th><th>Through</th></tr></thead>
+        <thead><tr><th>Country</th><th class="num">Exposure</th><th class="num">Risk</th><th>Main driver</th><th>Through</th></tr></thead>
         <tbody>
           {% for c in r.by_country %}
-          <tr{% if loop.index > 5 %} class="more"{% endif %}><td>{{ c.name }}{% if c.proxy %} <span class="muted small" title="No country index: global GPR used">global</span>{% endif %}</td><td class="num mono">{{ "%.1f"|format(c.X * 100) }}%</td>
-            <td class="num mono{% if c.g and c.g >= 0.8 %} hot{% endif %}" title="{{ c.method }}">{{ "%.0f"|format(c.g * 100) if c.g is not none else "—" }}</td>
-            <td class="num mono">{{ "%.1f"|format(c.points) }}</td>
-            <td class="muted driver">{{ c.driver }}</td><td class="mono small through">{{ c.holdings|join(", ") }}</td></tr>
+          <tr{% if loop.index > 5 %} class="more"{% endif %}><td>{{ c.name }}</td><td class="num mono">{{ "%.1f"|format(c.X * 100) }}%</td>
+            <td class="num mono{% if c.R >= 60 %} hot{% endif %}">{{ c.R }}</td>
+            <td class="muted">{{ c.driver }}</td><td class="mono small">{{ c.holdings|join(", ") }}</td></tr>
           {% endfor %}
         </tbody>
       </table>
       {% if r.by_country|length > 5 %}<button type="button" class="show-more" data-more>Show all {{ r.by_country|length }} countries<i class="chev"></i></button>{% endif %}
-      {% if r.country_meta and r.country_meta.error %}<p class="flag-note">{{ r.country_meta.error }}</p>{% endif %}
     </div>
   </section>
 
-  {% if r.market %}{% include "_market.html" %}{% endif %}
-
-  {% if r.signposts %}
   <section class="block coll">
-    <div class="block-head"><span class="block-no">06</span><h2><button type="button" class="block-toggle" aria-expanded="true">Signposts to watch<i class="chev"></i></button></h2>
-      <p>Early warnings of the scenarios with the most portfolio revenue in directly involved countries.</p></div>
+    <div class="block-head"><span class="block-no">04</span><h2><button type="button" class="block-toggle" aria-expanded="true">Five events to watch<i class="chev"></i></button></h2>
+      <p>Upcoming dated events ranked by exposure × severity × likelihood, discounted by how far away they are.</p></div>
     <div class="block-body">
       <ol class="watch">
-        {% for e in r.signposts %}
+        {% for e in r.watchlist %}
         <li>
-          <span class="watch-date mono">{{ "%.0f"|format(e.exposure * 100) }}%</span>
-          <span class="watch-title">{{ e.text }}</span>
-          <span class="watch-meta">{{ e.scenario }}{% if e.holdings %} · <span class="mono">{{ e.holdings|join(", ") }}</span>{% endif %}{% for ev in e.evidence[:2] %}{% set L = ax.by_url.get(ev.url) %}{% if L %}<a class="annex-ref mono" href="#annex-{{ L }}" title="“{{ ev.quote }}”">{{ L }}</a>{% endif %}{% endfor %}</span>
+          <span class="watch-date mono">{{ e.date }}</span>
+          <span class="watch-title">{{ e.title }}</span>
+          <span class="watch-meta">{{ e.channel|replace("_", " ") }} · severity {{ e.severity }}/5 · likelihood {{ "%.0f"|format(e.likelihood * 100) }}% · <span class="mono">{{ e.holdings|join(", ") }}</span></span>
         </li>
         {% endfor %}
       </ol>
-      <p class="annex-note small">The first column is the share of portfolio revenue in countries directly involved in the scenario.</p>
     </div>
   </section>
-  {% endif %}
 
   {% include "_scenarios.html" %}
 
-  <section class="block coll" id="recommendations">
-    <div class="block-head"><span class="block-no">08</span><h2><button type="button" class="block-toggle" aria-expanded="true">Recommendations<i class="chev"></i></button></h2>
-      <p>Chosen by code for this profile ({{ r.style.why if r.style else "" }}): first the stated limits the portfolio breaks, then, only if the score is above the tolerance of {{ r.verdict.tolerance }}, the largest contributors, sized to bring it back. Each change is re-scored with the full formula. A simulation, not advice.</p></div>
+  {% if r.whatifs %}
+  <section class="block coll collapsed">
+    <div class="block-head"><span class="block-no">06</span><h2><button type="button" class="block-toggle" aria-expanded="false">What if<i class="chev"></i></button></h2>
+      <p>Hypothetical changes and their effect on the score. A simulation, not a recommendation.</p></div>
     <div class="block-body">
-      {% if r.remediation %}
-      <ol class="whatifs">
-        {% for w in r.remediation %}
-        <li>
-          <span class="swap mono">{{ w.from }} → {{ w.to }}</span> <span class="tag">{{ "profile limit" if w.kind == "profile" else "risk" }}</span>
-          Move {{ "%.0f"|format(w.fraction * 100) }}% of {{ w.from }} ({{ "%.1f"|format(w.move * 100) }}% of the portfolio) into {{ w.to }}:
-          score {{ "%.0f"|format(w.score_before) }} → <b>{{ "%.0f"|format(w.score_after) }}</b>.
-          <span class="rationale">Why sell: {{ w.why_sell }}</span>
-          <span class="rationale">Why {{ w.to }}: {{ w.why_buy }}</span>
-          {% if w.ret_from is not none and w.ret_to is not none %}<span class="rationale muted">Past year: {{ w.from }} {{ "%+.0f"|format(w.ret_from * 100) }}%, {{ w.to }} {{ "%+.0f"|format(w.ret_to * 100) }}%.</span>{% endif %}
-        </li>
+      <ul class="whatifs">
+        {% for w in r.whatifs %}
+        <li>Moving half of <b class="mono">{{ w.from }}</b> ({{ "%.1f"|format(w.move * 100) }}% of the portfolio) into <b class="mono">{{ w.to }}</b>
+          would change the score from {{ "%.0f"|format(r.score) }} to <b>{{ "%.0f"|format(w.score_after) }}</b>.
+          {% if w.ret_from is not none and w.ret_to is not none %}Over the year to {{ r.as_of }}, {{ w.from }} returned {{ "%+.0f"|format(w.ret_from * 100) }}% and {{ w.to }} {{ "%+.0f"|format(w.ret_to * 100) }}%.{% endif %}</li>
         {% endfor %}
-      </ol>
-      {% set last = r.remediation[-1] %}
-      <p class="small">After all changes: score {{ "%.0f"|format(r.score) }} → <b>{{ "%.0f"|format(last.score_after) }}</b> (tolerance {{ r.verdict.tolerance }}).</p>
-      {% elif r.verdict.status == "clear" %}
-      <p><b>Nothing to change.</b> The portfolio is within the profile's tolerance, markets are calm and no stated limit is broken.</p>
-      {% elif r.verdict.status == "watch" %}
-      <p><b>No trade needed now.</b> The score is within tolerance; markets are stressed. Re-run when the stress indices ease or rise further.</p>
-      {% else %}
-      <p class="muted">No fund the profile allows lowers the score enough to help.</p>
-      {% endif %}
+      </ul>
     </div>
   </section>
-
-  {% if r.method %}{% include "_method.html" %}{% endif %}
+  {% endif %}
 
   {% include "_annexes.html" %}
 </div>

@@ -209,3 +209,48 @@ class ScenarioSet(BaseModel):
     mock: bool = False
     inputs: list[dict] = Field(default_factory=list, description="Sources read for this set: id, name, url, retrieved_at, ok")
     scenarios: list[Scenario]
+
+
+# ---------- Orchestrator chain schemas ----------
+
+class Step(BaseModel):
+    """One recorded agent invocation inside a ChainResult."""
+    agent: str
+    input: dict
+    output: dict
+    ms: float = 0.0
+
+
+class PortfolioRisk(BaseModel):
+    """Deterministic portfolio risk output from risk_agent.run()."""
+    score: float = Field(description="Final personalized risk score 0-100")
+    objective_score: float = Field(0.0, description="Objective risk 0-100, independent of user tolerance")
+    personalized_score: float = Field(0.0, description="Personalized concern 0-100")
+    confidence: float = Field(1.0, ge=0.0, le=1.0, description="Aggregate confidence 0-1")
+    by_ticker: dict[str, float] = Field(default_factory=dict,
+                                        description="Firm risk score 0-100 per ticker")
+    top_drivers: list[str] = Field(default_factory=list)
+    explanation: str = ""
+    components: dict[str, float] = Field(default_factory=dict,
+                                         description="A1/A2/A3/A4 component breakdown (0-100 scale)")
+
+
+class Trade(BaseModel):
+    """A single remediation trade recommendation."""
+    ticker: str
+    action: Literal["buy", "sell", "hold"] = "sell"
+    delta_weight: float = Field(0.0, description="Signed weight change, e.g. -0.05")
+    rationale: str = ""
+
+
+class RemediationPlan(BaseModel):
+    """Output of the remediation agent."""
+    trades: list[Trade] = Field(default_factory=list)
+    expected_risk_after: float = Field(0.0, description="Estimated portfolio risk after trades 0-100")
+    summary: str = ""
+
+
+class ChainResult(BaseModel):
+    """Full end-to-end analysis result."""
+    steps: list[Step]
+    final: RemediationPlan

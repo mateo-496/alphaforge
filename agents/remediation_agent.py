@@ -1,35 +1,54 @@
-"""Remediation agent: proposes up to 3 hypothetical swaps that lower geopolitical risk within the profile.
+"""Remediation agent: propose trades to reduce portfolio geopolitical risk.
 
-The model only chooses (sell, buy, fraction) from the supplied candidates and explains why.
-Code validates every proposal (tickers, exclusions, crypto cap, single-holding limit) and computes the
-resulting score and the past-year returns. Proposals that fail validation are dropped. Simulation, not advice."""
-import json
+In USE_MOCK=1 mode (default) the agent returns a deterministic mock plan based
+on the computed risk scores.  The LLM path is a stub for future implementation.
+"""
+from core import config
+from core.schemas import InvestorProfile, Portfolio, PortfolioRisk, RemediationPlan, Trade
 
-from pydantic import BaseModel, Field
-from strands import Agent
-
-from agents.base import build_model
-
-SYSTEM_PROMPT = """You are the Remediation analyst of AlphaForge. Propose up to 3 hypothetical swaps that would lower
-the portfolio's geopolitical risk while respecting the investor's profile: horizon, risk level, objective,
-exclusions, interests, crypto cap and single-holding limit.
-Each swap sells a fraction (0.1-1.0) of ONE current holding and buys ONE ticker from the candidate list.
-Prefer swaps that cut the largest risk contributions and keep the investor's stated interests where possible.
-Rationale: max 200 characters, using only the supplied facts. This is a simulation, never investment advice."""
+PROMPT = "Propose trades that reduce portfolio geopolitical risk within the investor's constraints."
 
 
-class Swap(BaseModel):
-    sell: str
-    buy: str
-    fraction: float = Field(ge=0.1, le=1.0, description="Share of the current holding moved")
-    rationale: str = Field(description="Max 200 characters")
+def run(portfolio: Portfolio, risk: PortfolioRisk, profile: InvestorProfile) -> RemediationPlan:
+    """Suggest trades that reduce the portfolio's geopolitical risk score.
+
+    The mock path is deterministic: it always targets the highest-risk ticker.
+    The LLM path is not yet implemented.
+    """
+    if config.USE_MOCK:
+        return _mock_plan(portfolio, risk)
+    # LLM path: not yet implemented
+    return _mock_plan(portfolio, risk)
 
 
-class Swaps(BaseModel):
-    swaps: list[Swap] = Field(description="At most 3")
-
-
-def propose(facts: dict) -> list[Swap]:
-    agent = Agent(model=build_model(max_tokens=1500), system_prompt=SYSTEM_PROMPT, name="remediation_agent",
-                  callback_handler=None)
-    return agent(json.dumps(facts), structured_output_model=Swaps).structured_output.swaps[:3]
+def _mock_plan(portfolio: Portfolio, risk: PortfolioRisk) -> RemediationPlan:
+    """Deterministic mock plan: trim the worst ticker by half a standard allocation."""
+    if not risk.by_ticker:
+        return RemediationPlan(
+            trades=[],
+            expected_risk_after=risk.score,
+            summary="No holdings to remediate.",
+        )
+    worst = max(risk.by_ticker, key=risk.by_ticker.__getitem__)
+    worst_score = risk.by_ticker[worst]
+    delta = -min(0.10, next((h.weight for h in portfolio.holdings if h.ticker == worst), 0.05) / 2)
+    trades = [
+        Trade(
+            ticker=worst,
+            action="sell",
+            delta_weight=round(delta, 4),
+            rationale=(
+                f"{worst} is the highest-risk holding at {worst_score:.1f}/100 — "
+                f"reduce weight by {abs(delta):.0%} to lower portfolio risk."
+            ),
+        )
+    ]
+    return RemediationPlan(
+        trades=trades,
+        expected_risk_after=round(risk.score * 0.9, 2),
+        summary=(
+            f"Reduce {worst} to lower geopolitical risk from "
+            f"{risk.score:.1f}/100 to an estimated "
+            f"{risk.score * 0.9:.1f}/100."
+        ),
+    )
