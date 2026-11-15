@@ -22,7 +22,7 @@ from agents import (country_risk_agent, exposure_agent, geopolitical_agent, geop
                     remediation_agent, risk_agent)
 from pipelines import scenarios as sc
 from tools import gpr, market_data, risk_math
-from web import firms, market, recommend, scoring, universe as U
+from web import firms, market, profile, recommend, scoring, universe as U
 from web.options import NAMES as _NAMES
 from web.store import runs
 
@@ -264,6 +264,7 @@ async def run(run_id: str) -> None:
         report["remediation"] = recommend.propose(prof, weights, parts, cand_parts,
                                                   {c: a["country_weights"] for c, a in cand_assets.items()},
                                                   report["checks"], report["verdict"], uni, NAMES, score_fn)
+        report["profile_outcome"] = profile.assess_swaps(prof, weights, report["remediation"], uni, as_of, cw, NAMES)
         report["style"] = recommend.style(prof)
         explain_facts = _explain_facts(req, report)
 
@@ -277,15 +278,22 @@ async def run(run_id: str) -> None:
         if sentences:   # the verdict section below carries the all-clear: no need to repeat it here
             report["summary"], report["summary_by"] = sentences, "risk agent"
         report["agent_swaps"] = None
-        if report["verdict"]["status"] == "act" and cand_parts:
-            rf = remediation_agent.facts(prof, weights, parts, cand_parts, port["objective"],
-                                         report["verdict"]["tolerance"], report["remediation"], uni)
+        report["agent_status"] = "not_needed" if report["verdict"]["status"] != "act" else "no_eligible_funds"
+        agent_cand_parts = {c: p for c, p in cand_parts.items()
+                            if recommend._fit(c, prof, uni, p["G"], cand_assets[c]["country_weights"]) is not None}
+        if report["verdict"]["status"] == "act" and agent_cand_parts:
+            rf = remediation_agent.facts(prof, weights, parts, agent_cand_parts, port["objective"],
+                                         report["verdict"]["tolerance"], report["remediation"], uni, report, cand_assets)
             ev(kind="llm", phase="remediation", status="start", id="bedrock", label="Alternative swaps", detail="remediation agent")
             try:
-                report["agent_swaps"] = await asyncio.to_thread(remediation_agent.propose, rf, weights, parts, cand_parts,
+                report["agent_swaps"] = await asyncio.to_thread(remediation_agent.propose, rf, weights, parts, agent_cand_parts,
                                                                 report["remediation"], score_fn)
+                for swap in report["agent_swaps"]:
+                    profile.assess_swaps(prof, weights, [swap], uni, as_of, cw, NAMES)
+                report["agent_status"] = "completed"
                 detail = f"{len(report['agent_swaps'])} kept after validation"
             except Exception as e:
+                report["agent_status"] = "unavailable"
                 detail = f"unavailable: {type(e).__name__}: {str(e)[:120]}"
             ev(kind="llm", phase="remediation", status="done", id="bedrock", label="Alternative swaps", detail=detail)
         if report["remediation"]:
@@ -423,7 +431,7 @@ def build_report(req, weights, assets, countries, X, hold, ctry, port, tol, M, f
     for c in prof.get("avoid_countries", []):
         if X.get(c, 0) >= 0.005:
             via = [t for t in weights if assets[t]["country_weights"].get(c, 0) >= 0.02]
-            checks.append({"ticker": c, "text": f"{X[c]:.1%} of portfolio revenue comes from {NAMES.get(c, c)}, "
+            checks.append({"id": f"country:{c}", "ticker": c, "text": f"{X[c]:.1%} of portfolio revenue comes from {NAMES.get(c, c)}, "
                                                 f"a country the profile wants to limit" + (f" (through {', '.join(via)})." if via else ".")})
 
     v = scoring.verdict(port["objective"], tol, len(checks))

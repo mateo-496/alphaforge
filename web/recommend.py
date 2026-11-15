@@ -18,6 +18,8 @@ CLASS_LABEL = {"etf_bond": "bond fund", "etf_equity": "equity fund", "etf_commod
 
 def style(p: dict) -> dict:
     """What the profile wants from a replacement, with the reason shown to the user."""
+    if p.get("replacement_types") is not None:
+        return {"prefer": p["replacement_types"], "why": "the investor's selected replacement types"}
     horizon, risk, obj = p.get("horizon_years", 10), p.get("risk_level", 3), p.get("objective_level", 3)
     if horizon <= 5 or obj <= 2 or risk <= 2:
         return {"prefer": ["etf_bond", "etf_commodity", "etf_equity"],
@@ -34,7 +36,8 @@ def candidates(p: dict, weights: dict, uni: dict) -> list[str]:
     st = style(p)
     out = []
     for c in FUNDS:
-        if c not in uni or c in excl_t or uni[c]["asset_class"] not in st["prefer"]:
+        if (c not in uni or c in excl_t or uni[c].get("sector") in p.get("excluded_sectors", [])
+            or uni[c]["asset_class"] not in st["prefer"]):
             continue
         if p.get("esg_importance") == "high" and uni[c]["asset_class"] == "etf_equity" and c not in ESG_FUNDS:
             continue
@@ -77,11 +80,17 @@ def propose(p: dict, weights: dict, parts: dict, cand_parts: dict, cand_cw: dict
     if not ranked:
         return []
     out = []
+    protected = set(p.get("protected_holdings", []))
+    max_turnover = p.get("max_turnover", 1.0)
 
     def swap(sell, frac, why_sell, kind):
         nonlocal P
         buy = ranked[0]
-        move = w[sell] * frac
+        remaining = max(0.0, max_turnover - sum(item["move"] for item in out))
+        move = min(w[sell] * frac, remaining)
+        if move <= 1e-9:
+            return 0.0
+        frac = move / w[sell]
         before = P
         w[sell] -= move
         w[buy] = w.get(buy, 0) + move
@@ -101,13 +110,15 @@ def propose(p: dict, weights: dict, parts: dict, cand_parts: dict, cand_cw: dict
             crypto = {x: v for x, v in w.items() if uni.get(x, {}).get("asset_class") == "crypto" and v > 0}
             excess = sum(crypto.values()) - p.get("crypto_max", 0)
             for x, v in sorted(crypto.items(), key=lambda kv: -kv[1]):
-                if excess <= 1e-9 or x in seen:
+                if excess <= 1e-9:
                     break
+                if x in seen or x in protected:
+                    continue
                 frac = min(1.0, excess / v)
                 seen.add(x)
-                excess -= v * frac
                 swap(x, frac, chk["text"], "profile")
-        elif t in w and t not in seen and w[t] > 0:
+                excess -= v - w[x]
+        elif t in w and t not in seen and t not in protected and w[t] > 0:
             seen.add(t)
             cap = p.get("max_single_weight", 1)
             frac = 1 - cap / w[t] if "single-holding limit" in chk["text"] else 0.5 if "volatility" in chk["text"] else 1.0
@@ -116,11 +127,12 @@ def propose(p: dict, weights: dict, parts: dict, cand_parts: dict, cand_cw: dict
     # 3. risk fixes, only above tolerance
     T = verdict["tolerance"]
     for _ in range(3):
-        if P <= T:
+        if P <= T or sum(item["move"] for item in out) >= max_turnover - 1e-9:
             break
         best = ranked[0]
         Gb = cand_parts[best]["G"]
-        cands = [(t, x * allp[t]["G"]) for t, x in w.items() if x > 1e-9 and t not in cand_parts and allp[t]["G"] > Gb + 5]
+        cands = [(t, x * allp[t]["G"]) for t, x in w.items()
+             if x > 1e-9 and t not in protected and t not in cand_parts and allp[t]["G"] > Gb + 5]
         if not cands:
             break
         t, contrib = max(cands, key=lambda kv: kv[1])

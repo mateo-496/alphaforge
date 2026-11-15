@@ -140,6 +140,9 @@ class InvestorProfile(BaseModel):
     avoid_controversies: bool = False
     crypto_max: float = Field(0.0, ge=0, le=1, description="Max total weight in crypto assets")
     max_single_weight: float = Field(0.25, gt=0, le=1, description="Max weight of any single holding")
+    protected_holdings: list[str] = Field(default_factory=list, description="Holdings that must not be sold")
+    max_turnover: float = Field(1.0, ge=0, le=1, description="Maximum portfolio weight sold across proposed changes")
+    replacement_types: Optional[list[Literal["etf_equity", "etf_bond", "etf_commodity"]]] = Field(None, min_length=1)
     excluded_sectors: list[str] = Field(default_factory=list, description="GICS sectors")
     excluded_themes: list[str] = Field(default_factory=list, description="e.g. 'Fossil fuels', 'Weapons', free text")
     excluded_tickers: list[str] = Field(default_factory=list)

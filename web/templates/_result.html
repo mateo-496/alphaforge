@@ -19,16 +19,18 @@
   <section class="verdict verdict-{{ v.status }}">
     <p class="verdict-title">{% if v.status == "clear" %}No immediate danger{% else %}Changes suggested{% endif %}</p>
     <p class="verdict-text">{% if v.status == "clear" %}Every test passes for this profile. Nothing needs to change; run the analysis again if the scenarios or the countries move.
-      {% else %}At least one test fails. The recommendations below fix it within the profile's limits.{% endif %}</p>
+      {% else %}At least one test fails. The recommendations below suggest changes within the profile's limits.{% endif %}</p>
     <ul class="tests">{% for t in v.tests %}<li class="{{ 'ok' if t.ok else 'fail' }}"><span class="mark">{{ "✓" if t.ok else "✕" }}</span>{{ t.name }}<span class="mono">{{ t.value }}</span></li>{% endfor %}</ul>
   </section>
 
-  {% if r.checks %}
+  {% if r.checks or (r.remediation and r.profile_outcome and r.profile_outcome.new) %}
   <section class="block coll">
     <div class="block-head"><span class="block-no">01</span><h2><button type="button" class="block-toggle" aria-expanded="true">Conflicts with the profile<i class="chev"></i></button></h2>
       <p>Stated limits and preferences the portfolio already breaks, before any geopolitical shock.</p></div>
     <div class="block-body">
-      <ol class="checks-list">{% for c in r.checks %}<li>{{ c.text }}</li>{% endfor %}</ol>
+      {% set resolved_ids = r.profile_outcome.resolved|map(attribute="id")|list if r.profile_outcome else [] %}
+      {% if r.checks %}<ol class="checks-list">{% for c in r.checks %}<li>{{ c.text }}{% if r.remediation and c.id %} <span class="muted small">{{ "Resolved after proposed changes" if c.id in resolved_ids else "Still unresolved after proposed changes" }}.</span>{% endif %}</li>{% endfor %}</ol>{% endif %}
+      {% if r.remediation and r.profile_outcome.new %}<p class="small"><b>New conflicts after the proposed changes</b></p><ol class="checks-list">{% for c in r.profile_outcome.new %}<li>{{ c.text }}</li>{% endfor %}</ol>{% endif %}
     </div>
   </section>
   {% endif %}
@@ -150,7 +152,7 @@
 
   <section class="block coll" id="recommendations">
     <div class="block-head"><span class="block-no">06</span><h2><button type="button" class="block-toggle" aria-expanded="true">Recommendations<i class="chev"></i></button></h2>
-      <p>Chosen by code{% if r.style %} for {{ r.style.why }}{% endif %}: broken limits first, then the riskiest holdings, in quarters, until the objective risk is under {{ "%g"|format(r.verdict.tolerance) }}. A simulation, not advice.</p></div>
+      <p>Chosen by code{% if r.style %} for {{ r.style.why }}{% endif %}: broken limits first, then the riskiest holdings, subject to your trade preferences. A simulation, not advice.</p></div>
     <div class="block-body">
       {% if r.remediation %}
       <ol class="whatifs">
@@ -161,28 +163,46 @@
           objective risk {{ "%.0f"|format(w.score_before) }} → <b>{{ "%.0f"|format(w.score_after) }}</b>.
           <span class="rationale">Why sell: {{ w.why_sell }}</span>
           <span class="rationale">Why {{ w.to }}: {{ w.why_buy }}</span>
+          {% for change in w.conflict_changes %}<span class="rationale">{{ {"resolved": "Resolved (before)", "remaining": "Still unresolved (after)", "new": "New conflict (after)"}[change.status] }}: {{ change.text }}</span>{% endfor %}
+          {% for note in w.profile_notes %}<span class="rationale">{{ note }}</span>{% endfor %}
           {% if w.ret_from is not none and w.ret_to is not none %}<span class="rationale muted">Past year: {{ w.from }} {{ "%+.0f"|format(w.ret_from * 100) }}%, {{ w.to }} {{ "%+.0f"|format(w.ret_to * 100) }}%.</span>{% endif %}
         </li>
         {% endfor %}
       </ol>
       {% set last = r.remediation[-1] %}
       <p class="small">After all changes: objective risk {{ "%.0f"|format(r.objective) }} → <b>{{ "%.0f"|format(last.score_after) }}</b> (comfort level {{ r.verdict.tolerance }}).</p>
+      {% if r.profile_outcome %}
+      <p class="small">After all changes: {{ r.profile_outcome.resolved|length }} detected original conflict{{ "s" if r.profile_outcome.resolved|length != 1 }} resolved, {{ r.profile_outcome.remaining|length }} remaining{% if r.profile_outcome.new %}, {{ r.profile_outcome.new|length }} new{% endif %}.</p>
+      {% else %}<p class="small muted">Trade preferences may limit the changes and leave some profile limits unresolved.</p>{% endif %}
       {% elif r.verdict.status == "clear" %}
       <p><b>Nothing to change.</b> The objective risk is within the profile's comfort level and no stated limit is broken.</p>
       {% else %}
-      <p class="muted">No fund the profile allows lowers the score enough to help.</p>
+      <p class="muted">No changes could be proposed within the trade preferences and available funds.</p>
       {% endif %}
       {% if r.agent_swaps %}
       <h3 class="sub">Alternatives from the remediation agent</h3>
-      <p class="small muted">Proposed by the agent, then checked by code: known tickers, profile-approved funds, each applied alone and kept only if the score goes down.</p>
+      <p class="small muted">Chosen by the agent, then sized and checked by code against trade preferences; each alternative is applied alone and kept only if the score goes down. Source excerpts provide risk context, not proof that a trade prevents losses.</p>
       <ol class="whatifs">
         {% for w in r.agent_swaps %}
         <li><span class="swap mono">{{ w.from }} → {{ w.to }}</span>
           Move {{ "%.0f"|format(w.fraction * 100) }}% of {{ w.from }} ({{ "%.1f"|format(w.move * 100) }}% of the portfolio) into {{ w.to }}:
           objective risk {{ "%.0f"|format(w.score_before) }} → <b>{{ "%.0f"|format(w.score_after) }}</b>.
-          <span class="rationale">{{ w.rationale }}</span></li>
+          <span class="rationale">{{ w.rationale }}</span>
+          {% for change in w.conflict_changes %}<span class="rationale">{{ {"resolved": "Resolved (before)", "remaining": "Still unresolved (after)", "new": "New conflict (after)"}[change.status] }}: {{ change.text }}</span>{% endfor %}
+          {% for note in w.profile_notes %}<span class="rationale">{{ note }}</span>{% endfor %}
+          {% for evidence in w.evidence %}
+          <span class="rationale">{{ evidence.kind }}{% if evidence.scenario %} ({{ evidence.scenario }}){% elif evidence.country %} ({{ evidence.country }}){% endif %}: “{{ evidence.quote }}” <a href="{{ evidence.url }}" target="_blank" rel="noopener">Source</a></span>
+          {% else %}
+          <span class="rationale muted">No verified source excerpt available for this holding.</span>
+          {% endfor %}</li>
         {% endfor %}
       </ol>
+      {% elif r.agent_status == "completed" %}
+      <p class="small muted">The remediation agent found no additional alternatives that passed validation.</p>
+      {% elif r.agent_status == "unavailable" %}
+      <p class="small muted">Remediation agent alternatives are unavailable; the code recommendations remain available.</p>
+      {% elif r.agent_status == "no_eligible_funds" %}
+      <p class="small muted">No replacement funds meet the profile's fund and country preferences.</p>
       {% endif %}
     </div>
   </section>

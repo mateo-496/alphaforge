@@ -131,8 +131,19 @@
         {{ slider("max_single_weight", "Largest single holding", 5, 100, 25, None, "%", 5) }}
         {{ slider("crypto_max", "Crypto, at most", 0, 50, 0, None, "%", 1) }}
         {{ slider("esg", "ESG importance", 0, 2, 0, {0: "Not a factor", 1: "Some", 2: "High: avoid controversies"}) }}
+        {{ slider("max_turnover", "Portfolio to trade, at most", 0, 100, 100, None, "%", 5) }}
       </div>
 
+      {{ tagbox("protected_holdings", "Holdings to keep", holding_options, "Search a holding...", false) }}
+      <fieldset class="field replacement-group">
+        <legend class="label-inline">Replacement types</legend>
+        <div class="replacement-types">
+          <label><input type="checkbox" name="replacement_types" value="etf_equity"> Equity funds</label>
+          <label><input type="checkbox" name="replacement_types" value="etf_bond"> Bond funds</label>
+          <label><input type="checkbox" name="replacement_types" value="etf_commodity"> Gold funds</label>
+        </div>
+        <em>Leave unselected to use the investor profile.</em>
+      </fieldset>
       {{ tagbox("exclusions", "Exclude", exclusion_options, "Sector, theme or company…", true) }}
       {{ tagbox("avoid_countries", "Countries to limit exposure to", country_options, "Search a country…", false,
                 "Measured through each company's revenue: from its SEC filing when available, otherwise estimated.") }}
