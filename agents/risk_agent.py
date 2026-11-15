@@ -214,7 +214,7 @@ def analyze_country(country: str, bank: Optional[str] = None) -> CountryReport:
         R_c=round(r_c, 2)
     )
 
-    # 9. Save assessment to S3 following polyfinance pattern
+    # 9. Save assessment to S3 storage
     country_slug = country.lower().replace(" ", "-")
     save_json(f"assessments/{country_slug}.json", report)
 
