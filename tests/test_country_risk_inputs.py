@@ -23,6 +23,12 @@ def test_resolve_iso3_accepts_iso2_iso3_and_names(frame):
     assert cri.resolve_iso3("Atlantis") is None
 
 
+def test_resolve_iso3_falls_back_to_world_bank_names(frame, monkeypatch):
+    monkeypatch.setattr(cri.worldbank, "resolve_country", lambda name: {"taiwan, china": "TWN", "mars": "MRS"}.get(name.lower()))
+    assert cri.resolve_iso3("Taiwan, China") == "TWN"
+    assert cri.resolve_iso3("Mars") is None  # known to the World Bank but absent from the GPR file
+
+
 def test_gpr_percentile_is_relative_to_own_history_not_level(frame):
     twn = cri.gpr_percentile("TWN", "2026-10-31")
     usa = cri.gpr_percentile("USA", "2026-10-31")

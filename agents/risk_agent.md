@@ -10,8 +10,8 @@ The [risk agent](risk_agent.py) computes the final portfolio risk. It gathers me
 
 ## Formula
 
-- **Country risk** `R_c`: mean of the percentile of the country GPR (own last ten years, 12-month mean) and the
-  percentile of the global OFR financial stress index. EPU is not sourced. Missing inputs are reported and the
+- **Country risk** `R_c` (country risk agent, then measured inputs alone for countries the World Bank lacks): mean of the percentile of the country GPR (own last ten years, 12-month mean) and the
+  percentile of the global OFR financial stress index and the claim quality of the World Bank macro claims. EPU is not sourced. Missing inputs are reported and the
   weights renormalised, never replaced by invented values (see [tools/country_risk_inputs.py](../tools/country_risk_inputs.py)).
 - **Exposure** `E_i = sum_c w_ic R_c` from the SEC geographic revenue split; the unknown share (including "Other")
   takes the mean `R_c` of the scored countries. With no known split, the term is missing.

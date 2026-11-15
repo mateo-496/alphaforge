@@ -19,21 +19,33 @@ SOURCE_URL = "https://data.worldbank.org/indicator/"
 
 
 @lru_cache(maxsize=1)
-def _countries() -> dict[str, str]:
-    """Lower-cased name / ISO2 / ISO3 -> ISO3, for real countries only (aggregates are excluded)."""
+def _load() -> tuple[dict[str, str], dict[str, dict]]:
+    """(lower-cased name / ISO2 / ISO3 -> ISO3, ISO3 -> {"name", "iso2"}), real countries only (no aggregates)."""
     payload = get_json(f"{BASE}/country", params={"format": "json", "per_page": 400})
-    names: dict[str, str] = {}
+    lookup: dict[str, str] = {}
+    info: dict[str, dict] = {}
     for item in payload[1]:
         if item["region"]["id"] == "NA":  # aggregates such as "World" or "Euro area"
             continue
         iso3 = item["id"]
+        info[iso3] = {"name": item["name"], "iso2": item["iso2Code"]}
         for key in (item["name"], item["iso2Code"], iso3):
-            names[key.lower()] = iso3
-    return names
+            lookup[key.lower()] = iso3
+    return lookup, info
+
+
+def _countries() -> dict[str, str]:
+    return _load()[0]
 
 
 def resolve_country(country: str) -> Optional[str]:
     return _countries().get(country.strip().lower())
+
+
+def country_info(country: str) -> Optional[dict]:
+    """{"iso3", "iso2", "name"} for a name, ISO2 or ISO3 code; None if unknown."""
+    iso3 = resolve_country(country)
+    return {"iso3": iso3, **_load()[1][iso3]} if iso3 else None
 
 
 @lru_cache(maxsize=256)

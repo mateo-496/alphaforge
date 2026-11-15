@@ -9,7 +9,7 @@ import boto3
 import pandas as pd
 
 from core import config
-from tools import market_stress, risk_math
+from tools import market_stress, risk_math, worldbank
 
 GPR_KEY = "raw/gpr_data/data_gpr_export.xls"
 WINDOW = 12  # months averaged to smooth the monthly GPR series
@@ -50,7 +50,13 @@ def resolve_iso3(country: str) -> Optional[str]:
     df, names = _gpr_frame()
     if f"gprc_{key.lower()}" in df.columns:
         return key.upper()
-    return names.get(key.lower())
+    if key.lower() in names:
+        return names[key.lower()]
+    try:  # World Bank names such as "Korea, Rep." or "Russian Federation"
+        iso3 = worldbank.resolve_country(key)
+    except Exception:
+        return None
+    return iso3 if iso3 and f"gprc_{iso3.lower()}" in df.columns else None
 
 
 def gpr_percentile(iso3: str, as_of: str) -> Optional[dict]:

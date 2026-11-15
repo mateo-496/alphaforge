@@ -1,14 +1,15 @@
 """Run pipeline: what the server does after the user clicks Run analysis.
 
 Each step writes progress events to the run store (the page polls them) and its data to the cache.
-Everything below is MOCKED: swap each `_mock_*` call for the real agent, keep the event and data shapes.
+Assets and countries come from `web/live.py` (real agents) and fall back to the `_mock_*` reports when an item
+has no real source or an agent fails (`USE_REAL_AGENTS=0` forces the mocks). Event and data shapes are unchanged.
 """
 import asyncio
 import math
 from datetime import date, timedelta
 
 from tools import risk_math
-from web import mock, universe as U
+from web import live, mock, universe as U
 from web.store import cache, runs
 
 DELAY = {"asset": 0.7, "country": 0.35, "step": 0.8}  # mock latency, makes the progress view visible
@@ -22,12 +23,12 @@ def _mock_asset_report(ticker: str, as_of: str) -> dict:
             "firm_score": mock.FIRM_SCORE.get(ticker, 1.0),
             "method": "ETF look-through" if a["asset_class"].startswith("etf") else
                       ("No issuer country" if is_fund else "Annual filing, segment note"),
-            "sources": [mock.MOCK_SOURCE]}
+            "sources": [mock.MOCK_SOURCE], "mock": True}
 
 
 def _mock_country_report(iso3: str, as_of: str) -> dict:
     r, driver = mock.COUNTRY.get(iso3, mock.COUNTRY["Other"])
-    return {"country": iso3, "as_of": as_of, "R": r, "driver": driver, "sources": [mock.MOCK_SOURCE]}
+    return {"country": iso3, "as_of": as_of, "R": r, "driver": driver, "sources": [mock.MOCK_SOURCE], "mock": True}
 
 
 # ---------- helpers ----------
@@ -42,12 +43,17 @@ def _ret_1y(ticker: str, as_of: str) -> float | None:
 
 
 def _asset_risk(rep: dict, R: dict) -> float:
-    """G_i = 0.8 * exposure-weighted country risk + 0.2 * firm-specific score (0-5 rescaled to 0-100)."""
-    return 0.8 * risk_math.ticker_risk(rep["country_weights"], R) + 0.2 * rep["firm_score"] * 20
+    """G_i on 0-100 from tools.risk_math.asset_risk: exposure-weighted country risk, filing risk, market risk
+    (equal weights, renormalised over the terms that exist). Unknown revenue ('Other') takes the mean country risk."""
+    scored = {c: r / 100 for c, r in R.items() if c != "Other"}
+    filing = rep.get("filing", rep["firm_score"] / 5 if rep.get("mock", True) else None)
+    g, _, _ = risk_math.asset_risk(rep["country_weights"], scored, filing, rep.get("market"))
+    return 100 * g
 
 
 def _level(score: float) -> str:
-    return "low" if score < 30 else "moderate" if score < 40 else "elevated" if score < 50 else "high"
+    """Equal bands of the 0-100 score."""
+    return "low" if score < 25 else "moderate" if score < 50 else "elevated" if score < 75 else "high"
 
 
 def scenario_impacts(sets: list[dict], weights: dict, assets: dict) -> list[dict]:
@@ -121,7 +127,7 @@ async def run(run_id: str) -> None:
             rep = cache.get("assets", f"{t}_{as_of}")
             if rep is None:
                 await asyncio.sleep(DELAY["asset"])
-                rep = _mock_asset_report(t, as_of)
+                rep = await live.asset_report(t, uni[t], as_of) or _mock_asset_report(t, as_of)
                 cache.put("assets", f"{t}_{as_of}", rep)
             else:
                 await asyncio.sleep(0.15)
@@ -144,7 +150,7 @@ async def run(run_id: str) -> None:
             rep = cache.get("countries", f"{c}_{as_of}")
             if rep is None:
                 await asyncio.sleep(DELAY["country"])
-                rep = _mock_country_report(c, as_of)
+                rep = await live.country_report(c, as_of) or _mock_country_report(c, as_of)
                 cache.put("countries", f"{c}_{as_of}", rep)
             countries[c] = rep
             ev(kind="country", phase="countries", status="done", id=c, label=name, detail=f"risk {rep['R']}/100")
@@ -247,7 +253,8 @@ def build_report(req, weights, assets, countries, X, G, score, sets) -> dict:
             "scenario_sets": [{k: v for k, v in g.items() if k != "scenarios"} for g in sets],
             "highlight": req.get("scenario_country"),
             "assets": {t: {"weight": w, "country_weights": assets[t]["country_weights"]} for t, w in weights.items()},
-            "mock": True}
+            "mock": any(r.get("mock", True) for r in assets.values())
+                    or any(r.get("mock", True) for c, r in countries.items() if c != "Other")}
 
 
 # ---------- regenerate / highlight from the report page ----------
