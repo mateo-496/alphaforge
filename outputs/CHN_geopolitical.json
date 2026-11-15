@@ -1,0 +1,163 @@
+{
+  "agent": "geopolitical",
+  "entity": {
+    "ticker": "CHN",
+    "country": null
+  },
+  "as_of": "2026-11-14",
+  "claims": [
+    {
+      "id": "geopolitical:CHN:001",
+      "channel": "conflict_exposure",
+      "statement": "China's geopolitical risk index in October 2026 stands at 0.84% of newspaper articles, below the recent spike levels but elevated compared to mid-2025.",
+      "value": 0.8414,
+      "unit": "pct_articles",
+      "score": 3,
+      "confidence": 0.95,
+      "sources": [
+        {
+          "title": "Geopolitical Risk (GPR) index, data_gpr_export.xls",
+          "url": "s3://datathon-equipe-5-017820693871/raw/gpr_data/data_gpr_export.xls",
+          "locator": "gprc_chn, 2026-10",
+          "retrieved_at": "2026-11-14T23:53:48+00:00"
+        }
+      ],
+      "evidence_quote": "\"month\": \"2026-10\", \"gpr\": 150.52, \"gprc_chn\": 0.8414, \"gprhc_chn\": 0.6475",
+      "quote_verified": true
+    },
+    {
+      "id": "geopolitical:CHN:002",
+      "channel": "conflict_exposure",
+      "statement": "China experienced a major geopolitical risk spike in March 2026, reaching 1.70% of articles, the highest level since March 2022 and representing a near-tripling from the prior month.",
+      "value": 1.6985,
+      "unit": "pct_articles",
+      "score": 5,
+      "confidence": 0.98,
+      "sources": [
+        {
+          "title": "Geopolitical Risk (GPR) index, data_gpr_export.xls",
+          "url": "s3://datathon-equipe-5-017820693871/raw/gpr_data/data_gpr_export.xls",
+          "locator": "gprc_chn, 2026-03",
+          "retrieved_at": "2026-11-14T23:53:48+00:00"
+        }
+      ],
+      "evidence_quote": "\"month\": \"2026-03\", \"gpr\": 330.1768, \"gprc_chn\": 1.6985, \"gprhc_chn\": 1.5658",
+      "quote_verified": true
+    },
+    {
+      "id": "geopolitical:CHN:003",
+      "channel": "conflict_exposure",
+      "statement": "China's geopolitical risk remained elevated through spring 2026, with April and May 2026 showing sustained high levels of 1.66% and 1.73% respectively.",
+      "value": 1.7285,
+      "unit": "pct_articles",
+      "score": 4,
+      "confidence": 0.97,
+      "sources": [
+        {
+          "title": "Geopolitical Risk (GPR) index, data_gpr_export.xls",
+          "url": "s3://datathon-equipe-5-017820693871/raw/gpr_data/data_gpr_export.xls",
+          "locator": "gprc_chn, 2026-05",
+          "retrieved_at": "2026-11-14T23:53:48+00:00"
+        }
+      ],
+      "evidence_quote": "\"month\": \"2026-05\", \"gpr\": 203.7766, \"gprc_chn\": 1.7285, \"gprhc_chn\": 1.4233",
+      "quote_verified": true
+    },
+    {
+      "id": "geopolitical:CHN:004",
+      "channel": "conflict_exposure",
+      "statement": "The March 2026 spike coincided with a global geopolitical risk index of 330.18, the second-highest level in the entire dataset after March 2022's 318.95.",
+      "value": 330.1768,
+      "unit": "index",
+      "score": 5,
+      "confidence": 0.99,
+      "sources": [
+        {
+          "title": "Geopolitical Risk (GPR) index, data_gpr_export.xls",
+          "url": "s3://datathon-equipe-5-017820693871/raw/gpr_data/data_gpr_export.xls",
+          "locator": "gpr, 2026-03",
+          "retrieved_at": "2026-11-14T23:53:48+00:00"
+        }
+      ],
+      "evidence_quote": "\"month\": \"2026-03\", \"gpr\": 330.1768, \"gprc_chn\": 1.6985",
+      "quote_verified": true
+    },
+    {
+      "id": "geopolitical:CHN:005",
+      "channel": "conflict_exposure",
+      "statement": "China's geopolitical risk has declined from the March-May 2026 peak but remains above the 2024-2025 baseline, with October 2026 at 0.84% versus an average of approximately 0.65% in late 2025.",
+      "value": 0.8414,
+      "unit": "pct_articles",
+      "score": 3,
+      "confidence": 0.92,
+      "sources": [
+        {
+          "title": "Geopolitical Risk (GPR) index, data_gpr_export.xls",
+          "url": "s3://datathon-equipe-5-017820693871/raw/gpr_data/data_gpr_export.xls",
+          "locator": "gprc_chn, 2026-10",
+          "retrieved_at": "2026-11-14T23:53:48+00:00"
+        }
+      ],
+      "evidence_quote": "\"month\": \"2026-10\", \"gpr\": 150.52, \"gprc_chn\": 0.8414",
+      "quote_verified": true
+    },
+    {
+      "id": "geopolitical:CHN:006",
+      "channel": "conflict_exposure",
+      "statement": "The historical China GPR index (gprhc_chn) in October 2026 stands at 0.65%, indicating moderate geopolitical risk coverage in the longer-term historical newspaper sample.",
+      "value": 0.6475,
+      "unit": "pct_articles",
+      "score": 2,
+      "confidence": 0.94,
+      "sources": [
+        {
+          "title": "Geopolitical Risk (GPR) index, data_gpr_export.xls",
+          "url": "s3://datathon-equipe-5-017820693871/raw/gpr_data/data_gpr_export.xls",
+          "locator": "gprhc_chn, 2026-10",
+          "retrieved_at": "2026-11-14T23:53:48+00:00"
+        }
+      ],
+      "evidence_quote": "\"month\": \"2026-10\", \"gpr\": 150.52, \"gprc_chn\": 0.8414, \"gprhc_chn\": 0.6475",
+      "quote_verified": true
+    },
+    {
+      "id": "geopolitical:CHN:007",
+      "channel": "conflict_exposure",
+      "statement": "China's geopolitical risk showed a sharp drop in June 2026 to 0.85%, falling by more than half from May's 1.73%, suggesting a de-escalation or shift in media focus.",
+      "value": 0.8472,
+      "unit": "pct_articles",
+      "score": 3,
+      "confidence": 0.96,
+      "sources": [
+        {
+          "title": "Geopolitical Risk (GPR) index, data_gpr_export.xls",
+          "url": "s3://datathon-equipe-5-017820693871/raw/gpr_data/data_gpr_export.xls",
+          "locator": "gprc_chn, 2026-06",
+          "retrieved_at": "2026-11-14T23:53:48+00:00"
+        }
+      ],
+      "evidence_quote": "\"month\": \"2026-06\", \"gpr\": 177.9998, \"gprc_chn\": 0.8472, \"gprhc_chn\": 0.7596",
+      "quote_verified": true
+    },
+    {
+      "id": "geopolitical:CHN:008",
+      "channel": "conflict_exposure",
+      "statement": "The global GPR index in October 2026 stands at 150.52, significantly elevated above the 1985-2019 baseline of 100 and indicating sustained worldwide geopolitical tensions.",
+      "value": 150.52,
+      "unit": "index",
+      "score": 3,
+      "confidence": 0.97,
+      "sources": [
+        {
+          "title": "Geopolitical Risk (GPR) index, data_gpr_export.xls",
+          "url": "s3://datathon-equipe-5-017820693871/raw/gpr_data/data_gpr_export.xls",
+          "locator": "gpr, 2026-10",
+          "retrieved_at": "2026-11-14T23:53:48+00:00"
+        }
+      ],
+      "evidence_quote": "\"month\": \"2026-10\", \"gpr\": 150.52",
+      "quote_verified": true
+    }
+  ],
+  "summary": "China experienced a severe geopolitical risk spike in March 2026, with newspaper coverage reaching 1.70% of articles, the highest level since March 2022 and coinciding with a global GPR index of 330.18 [geopolitical:CHN:002][geopolitical:CHN:004]. This elevated risk persisted through spring 2026, with April and May maintaining high levels of 1.66% and 1.73% respectively [geopolitical:CHN:003]. The risk profile showed a sharp decline in June 2026, dropping to 0.85% [geopolitical:CHN:007]. As of October 2026, China's geopolitical risk stands at 0.84% of articles, which remains above the late-2025 baseline but well below the spring 2026 peak [geopolitical:CHN:001][geopolitical:CHN:005]. The global GPR index remains elevated at 150.52, indicating sustained worldwide geopolitical tensions [geopolitical:CHN:008]. The historical GPR measure for China shows moderate coverage at 0.65% in October 2026 [geopolitical:CHN:006]."
+}

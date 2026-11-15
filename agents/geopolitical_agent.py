@@ -1,7 +1,9 @@
 """Geopolitical agent: country hazard on the analysis date (risk formula v2, tools/risk_math).
 
-Code computes the number: g_c = percentile of the country's Caldara–Iacoviello GPR index among its own past
-months (point in time). Countries the index does not cover use the global GPR, labelled as such.
+Code computes the number (tools/risk_math.hazard): g_c = L_c (1/2 + heat_c/2), where the level L_c averages
+internal instability (World Bank WGI political stability) and external tension (the country's 12-month GPR level,
+log scale, across countries), and heat_c is the percentile of its GPR among its own past months (point in time).
+Countries the index does not cover use the global GPR for the heat, labelled as such.
 Scenarios do not change the number; they are listed as context for the driver line.
 One Bedrock call then writes a one-line driver per country from those facts. If the call fails,
 the driver is a plain factual line built by code, so the report never shows invented text.
@@ -11,17 +13,17 @@ import json
 from pydantic import BaseModel, Field
 
 from core import llm
-from tools import gpr, risk_math
+from tools import gpr, risk_math, worldbank
 
 AGENT = "geopolitical"
 MAX_LLM_COUNTRIES = 25
 
 SYSTEM_PROMPT = """You are the Geopolitical analyst of AlphaForge, a portfolio-risk system.
-For each country you get computed facts: its hazard (the percentile of its geopolitical-risk index among its
-own past months, 0-100), whether that comes from the country's own index or the global one, and the
+For each country you get computed facts: its hazard (0-100, combining political stability and its
+geopolitical-risk index), whether the index is the country's own or the global one, and the
 scenarios in which it is directly involved.
 Write ONE short driver per country (max 60 characters, a noun phrase, no full sentence) naming what drives it,
-e.g. "Taiwan Strait crisis, chip export controls". The percentile is shown in its own column: do not repeat it.
+e.g. "Taiwan Strait crisis, chip export controls". The hazard is shown in its own column: do not repeat it.
 Use only the supplied facts and scenario names. Do not add numbers. No advice."""
 
 
@@ -56,15 +58,28 @@ def assess(countries: list[str], as_of: str, scenarios: list[dict], market: dict
     except Exception as e:
         tbl, meta["error"] = None, f"GPR unavailable: {type(e).__name__}"
     glob = gpr.at(tbl, "GLOBAL", as_of) if tbl else None
+    anchors = gpr.tension_anchors(tbl, as_of) if tbl else None
+    try:
+        wgi = worldbank.political_stability(as_of)
+    except Exception as e:   # the hazard degrades to the GPR level alone; said so in the report
+        wgi = {}
+        meta["error"] = f"WGI political stability unavailable: {type(e).__name__}"
+    meta["wgi"] = {"name": worldbank.WGI_PV[1], "url": "https://www.worldbank.org/en/publication/worldwide-governance-indicators"}
     out = {}
     for c in countries:
         own = gpr.at(tbl, c, as_of) if tbl else None
         g = own or glob
+        pv = wgi.get(c)
+        S = risk_math.instability(pv["value"] if pv else None)
+        E = risk_math.tension(own["mean_12m"] if own else None, anchors, c)
+        heat = g["pct"] if g else None
         involved = sorted(({"name": s["name"], "key": s.get("key"), "intensity": s["countries"][c]}
                            for s in scenarios if s["countries"].get(c, 0) >= risk_math.INVOLVED), key=lambda x: -x["intensity"])
-        out[c] = {"g": g["pct"] if g else None, "gpr": g, "proxy": own is None and g is not None,
-                  "scenarios": involved[:3],
-                  "method": "country GPR" if own else "global GPR (country not covered)" if g else "no data"}
+        parts = (["WGI stability"] if S is not None else []) + (["GPR level"] if E is not None else [])
+        out[c] = {"g": risk_math.hazard(S, E, heat), "S": S, "E": E, "heat": heat, "wgi": pv,
+                  "gpr": g, "proxy": own is None and g is not None, "scenarios": involved[:3],
+                  "method": (" + ".join(parts) or "no level data") + " · heat: " +
+                            ("country GPR" if own else "global GPR (country not covered)" if g else "none")}
         out[c]["driver"] = _fallback(out[c])
     ranked = sorted((c for c in countries if out[c]["g"] is not None), key=lambda c: -exposure.get(c, 0))[:MAX_LLM_COUNTRIES]
     if ranked:

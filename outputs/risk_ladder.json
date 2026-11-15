@@ -1,0 +1,173 @@
+{
+  "L01-cad-cash": {
+    "run_id": "78e630dd00db",
+    "target": 5,
+    "status": "done",
+    "error": null,
+    "seconds": 39,
+    "objective": 74.46,
+    "concern": 82.56,
+    "inputs": {
+      "A1": 0.2866,
+      "A2": 0.918,
+      "A3": null
+    },
+    "conf": [
+      1.0,
+      1.0,
+      0.0
+    ]
+  },
+  "L02-cad-income": {
+    "run_id": "ce947bc72273",
+    "target": 15,
+    "status": "done",
+    "error": null,
+    "seconds": 100,
+    "objective": 74.23,
+    "concern": 82.24,
+    "inputs": {
+      "A1": 0.2891697792011545,
+      "A2": 0.9151054882261581,
+      "A3": null
+    },
+    "conf": [
+      1.0,
+      1.0,
+      0.0
+    ]
+  },
+  "L03-na-balanced": {
+    "run_id": "bf1d8853df6c",
+    "target": 25,
+    "status": "done",
+    "error": null,
+    "seconds": 142,
+    "objective": 74.09,
+    "concern": 82.06,
+    "inputs": {
+      "A1": 0.3089847920215208,
+      "A2": 0.9102223963777603,
+      "A3": null
+    },
+    "conf": [
+      1.0,
+      1.0,
+      0.0
+    ]
+  },
+  "L04-developed-world": {
+    "run_id": "1dd83a01b913",
+    "target": 35,
+    "status": "done",
+    "error": null,
+    "seconds": 154,
+    "objective": 70.64,
+    "concern": 77.01,
+    "inputs": {
+      "A1": 0.3188017662150883,
+      "A2": 0.8715812054290603,
+      "A3": null
+    },
+    "conf": [
+      1.0,
+      1.0,
+      0.0
+    ]
+  },
+  "L05-us-megacap-tech": {
+    "run_id": "ed7154ea1ab7",
+    "target": 45,
+    "status": "done",
+    "error": null,
+    "seconds": 137,
+    "objective": 71.2,
+    "concern": 77.89,
+    "inputs": {
+      "A1": 0.3168778643708036,
+      "A2": 0.8706162275186408,
+      "A3": 0.625
+    },
+    "conf": [
+      0.941,
+      1.0,
+      0.2
+    ]
+  },
+  "L06-semis-supply-chain": {
+    "run_id": "0710bc63ee6d",
+    "target": 55,
+    "status": "done",
+    "error": null,
+    "seconds": 211,
+    "objective": 62.4,
+    "concern": 62.17,
+    "inputs": {
+      "A1": 0.29558769997456075,
+      "A2": 0.7723712135347297,
+      "A3": 0.37500000000000006
+    },
+    "conf": [
+      0.748,
+      1.0,
+      0.2
+    ]
+  },
+  "L07-emerging-markets": {
+    "run_id": "7bac85ae8fba",
+    "target": 65,
+    "status": "done",
+    "error": null,
+    "seconds": 228,
+    "objective": 66.49,
+    "concern": 69.97,
+    "inputs": {
+      "A1": 0.2541303673175959,
+      "A2": 0.8354491450834831,
+      "A3": null
+    },
+    "conf": [
+      0.921,
+      1.0,
+      0.0
+    ]
+  },
+  "L08-frontier-africa-latam": {
+    "run_id": "937cfbef16bd",
+    "target": 75,
+    "status": "done",
+    "error": null,
+    "seconds": 289,
+    "objective": 58.15,
+    "concern": 53.48,
+    "inputs": {
+      "A1": 0.3952127655425531,
+      "A2": 0.6701585130817026,
+      "A3": null
+    },
+    "conf": [
+      1.0,
+      1.0,
+      0.0
+    ]
+  },
+  "L09-china-taiwan": {
+    "run_id": "6578d7a9df8f",
+    "target": 85,
+    "status": "done",
+    "error": null,
+    "seconds": 245,
+    "objective": 68.16,
+    "concern": 72.93,
+    "inputs": {
+      "A1": 0.28704119219032975,
+      "A2": 0.8477237449897289,
+      "A3": null
+    },
+    "conf": [
+      0.928,
+      1.0,
+      0.0
+    ]
+  }
+}

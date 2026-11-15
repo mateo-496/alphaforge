@@ -229,9 +229,10 @@ async def run(run_id: str) -> None:
         countries, cmeta = await asyncio.to_thread(geopolitical_agent.assess, countries_needed, as_of, scen, {},
                                                    NAMES, X, gev)
         for c in sorted((c for c in X if c != "Other"), key=lambda c: -X[c])[:12]:
-            g = countries[c]["g"]
+            g, heat = countries[c]["g"], countries[c].get("heat")
             ev(kind="country", phase="countries", status="done", id=c, label=NAMES.get(c, c),
-               detail=f"GPR above {g:.0%} of its history · {countries[c]['method']}" if g is not None else "no data")
+               detail=(f"hazard {g:.0%}" + (f" · GPR above {heat:.0%} of its history" if heat is not None else "")
+                       + f" · {countries[c]['method']}") if g is not None else "no data")
         top_c = [c for c in sorted(X, key=lambda c: -X[c]) if countries.get(c, {}).get("gpr")][:CLAIMS_TOP_N]
         gpr_claims = await asyncio.to_thread(_gpr_claims, top_c, as_of, gev)
         ev(kind="phase", phase="countries", status="done", label="Country risk",
@@ -246,11 +247,12 @@ async def run(run_id: str) -> None:
              else None for t in weights}
         tol = scoring.tolerance(prof)
         cw = {t: a["country_weights"] for t, a in {**assets, **cand_assets}.items()}
-        hold = {t: scoring.holding(cw[t], M, g, f[t], tol) for t in weights}
-        cand = {c: scoring.holding(cw[c], M, g, None, tol) for c in cands}
+        co = scoring.companies(list(weights) + list(cands), uni)
+        hold = {t: scoring.holding(cw[t], M, g, f[t], tol, t in co) for t in weights}
+        cand = {c: scoring.holding(cw[c], M, g, None, tol, c in co) for c in cands}
         ctry = {c: scoring.country(c, M, g, tol) for c in set(X) - {"Other"}}
-        port = scoring.portfolio(weights, cw, M, g, f, tol)
-        score_fn = lambda w: scoring.portfolio(w, cw, M, g, f, tol)["objective"]
+        port = scoring.portfolio(weights, cw, M, g, f, tol, co)
+        score_fn = lambda w: scoring.portfolio(w, cw, M, g, f, tol, co)["objective"]
         report = build_report(req, weights, assets, countries, X, hold, ctry, port, tol, M, f, scen, sets, firm_res, cmeta)
         report["macro"], report["gpr_claims"] = macro, gpr_claims
         ev(kind="phase", phase="risk", status="done", label="Portfolio risk",
@@ -378,7 +380,8 @@ def _explain_facts(req: dict, r: dict) -> dict:
             "top_holdings": [{"ticker": h["ticker"], "weight": round(h["weight"], 3), "holding_risk": round(h["R"])}
                              for h in r["by_holding"][:4]],
             "top_countries": [{"country": c["name"], "revenue_share": round(c["X"], 3), "country_risk": round(c["R"]),
-                               "gpr_percentile": round(100 * c["g"]) if c["g"] is not None else None}
+                               "hazard": round(100 * c["g"]) if c["g"] is not None else None,
+                               "gpr_percentile": round(100 * c["heat"]) if c.get("heat") is not None else None}
                               for c in r["by_country"][:4]],
             "conflicts": [c["text"] for c in r["checks"]],
             "largest_what_if": [{"name": s["name"], "revenue_in_involved_countries": round(s["exposure"], 2)}
@@ -398,6 +401,7 @@ def build_report(req, weights, assets, countries, X, hold, ctry, port, tol, M, f
                           "source_url": (assets[t].get("source") or {}).get("url")} for t, w in weights.items()),
                         key=lambda r: -r["weight"] * r["R"])
     by_country = sorted(({"iso3": c, "name": NAMES.get(c, c), "X": round(x, 4), "g": countries[c]["g"],
+                          "S": countries[c].get("S"), "E": countries[c].get("E"), "heat": countries[c].get("heat"),
                           "M": M.get(c), "R": ctry[c]["objective"], "proxy": countries[c].get("proxy", False),
                           "driver": countries[c]["driver"], "method": countries[c]["method"],
                           "gpr": countries[c].get("gpr"), "scenarios": countries[c].get("scenarios", []),
@@ -432,7 +436,7 @@ def build_report(req, weights, assets, countries, X, hold, ctry, port, tol, M, f
     if by_country:
         c = by_country[0]
         summary.append({"title": "Where it comes from", "text":
-                        f"{c['name']}: {c['X']:.0%} of revenue" + (f", GPR above {c['g']:.0%} of its past months."
+                        f"{c['name']}: {c['X']:.0%} of revenue" + (f", country hazard {c['g']:.0%}."
                                                                    if c["g"] is not None else ".")})
     top = by_holding[0]
     summary.append({"title": "Holdings that matter", "text":

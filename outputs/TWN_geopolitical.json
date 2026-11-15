@@ -1,0 +1,163 @@
+{
+  "agent": "geopolitical",
+  "entity": {
+    "ticker": "TWN",
+    "country": null
+  },
+  "as_of": "2026-11-14",
+  "claims": [
+    {
+      "id": "geopolitical:TWN:001",
+      "channel": "conflict_exposure",
+      "statement": "Taiwan's geopolitical risk index reached a historic peak in March 2026, with 0.3339% of newspaper articles covering Taiwan-related geopolitical tensions, the highest level in the entire 10-year data series.",
+      "value": 0.3339,
+      "unit": "pct_articles",
+      "score": 5,
+      "confidence": 0.95,
+      "sources": [
+        {
+          "title": "Geopolitical Risk (GPR) index, data_gpr_export.xls",
+          "url": "s3://datathon-equipe-5-017820693871/raw/gpr_data/data_gpr_export.xls",
+          "locator": "gprc_twn, 2026-03",
+          "retrieved_at": "2026-11-15T00:00:29+00:00"
+        }
+      ],
+      "evidence_quote": "\"month\": \"2026-03\", \"gpr\": 330.1768, \"gprc_twn\": 0.3339, \"gprhc_twn\": 0.3653",
+      "quote_verified": true
+    },
+    {
+      "id": "geopolitical:TWN:002",
+      "channel": "conflict_exposure",
+      "statement": "Taiwan experienced an extreme geopolitical risk spike in May 2026, with 0.5347% of articles focused on Taiwan, representing the single highest monthly reading in the dataset and more than double the typical 2024-2025 baseline.",
+      "value": 0.5347,
+      "unit": "pct_articles",
+      "score": 5,
+      "confidence": 0.98,
+      "sources": [
+        {
+          "title": "Geopolitical Risk (GPR) index, data_gpr_export.xls",
+          "url": "s3://datathon-equipe-5-017820693871/raw/gpr_data/data_gpr_export.xls",
+          "locator": "gprc_twn, 2026-05",
+          "retrieved_at": "2026-11-15T00:00:29+00:00"
+        }
+      ],
+      "evidence_quote": "\"month\": \"2026-05\", \"gpr\": 203.7766, \"gprc_twn\": 0.5347, \"gprhc_twn\": 0.5016",
+      "quote_verified": true
+    },
+    {
+      "id": "geopolitical:TWN:003",
+      "channel": "conflict_exposure",
+      "statement": "The global geopolitical risk index surged to 330.1768 in March 2026, exceeding the previous peak of 318.9549 in March 2022 during the Ukraine invasion, with Taiwan featuring prominently in coverage.",
+      "value": 330.1768,
+      "unit": "index",
+      "score": 5,
+      "confidence": 0.95,
+      "sources": [
+        {
+          "title": "Geopolitical Risk (GPR) index, data_gpr_export.xls",
+          "url": "s3://datathon-equipe-5-017820693871/raw/gpr_data/data_gpr_export.xls",
+          "locator": "gpr, 2026-03",
+          "retrieved_at": "2026-11-15T00:00:29+00:00"
+        }
+      ],
+      "evidence_quote": "\"month\": \"2026-03\", \"gpr\": 330.1768, \"gprc_twn\": 0.3339",
+      "quote_verified": true
+    },
+    {
+      "id": "geopolitical:TWN:004",
+      "channel": "conflict_exposure",
+      "statement": "Taiwan's geopolitical risk remained elevated in October 2026 at 0.0821% of articles, though substantially lower than the March-May 2026 crisis period, indicating a partial de-escalation but continued elevated baseline.",
+      "value": 0.0821,
+      "unit": "pct_articles",
+      "score": 3,
+      "confidence": 0.9,
+      "sources": [
+        {
+          "title": "Geopolitical Risk (GPR) index, data_gpr_export.xls",
+          "url": "s3://datathon-equipe-5-017820693871/raw/gpr_data/data_gpr_export.xls",
+          "locator": "gprc_twn, 2026-10",
+          "retrieved_at": "2026-11-15T00:00:29+00:00"
+        }
+      ],
+      "evidence_quote": "\"month\": \"2026-10\", \"gpr\": 150.52, \"gprc_twn\": 0.0821, \"gprhc_twn\": 0.0518",
+      "quote_verified": true
+    },
+    {
+      "id": "geopolitical:TWN:005",
+      "channel": "conflict_exposure",
+      "statement": "Taiwan's geopolitical risk index showed a sustained elevation throughout 2022-2026, averaging approximately 0.25% of articles compared to 0.08% in 2017-2020, representing a structural tripling of baseline risk.",
+      "value": 0.25,
+      "unit": "pct_articles",
+      "score": 4,
+      "confidence": 0.85,
+      "sources": [
+        {
+          "title": "Geopolitical Risk (GPR) index, data_gpr_export.xls",
+          "url": "s3://datathon-equipe-5-017820693871/raw/gpr_data/data_gpr_export.xls",
+          "locator": "gprc_twn, 2022-08 to 2026-10",
+          "retrieved_at": "2026-11-15T00:00:29+00:00"
+        }
+      ],
+      "evidence_quote": "\"month\": \"2022-08\", \"gpr\": 132.8632, \"gprc_twn\": 0.7402, \"gprhc_twn\": 0.7976",
+      "quote_verified": true
+    },
+    {
+      "id": "geopolitical:TWN:006",
+      "channel": "conflict_exposure",
+      "statement": "The August 2022 spike to 0.7402% of articles represented the previous all-time high for Taiwan geopolitical risk before being exceeded in May 2026, marking two distinct crisis episodes.",
+      "value": 0.7402,
+      "unit": "pct_articles",
+      "score": 4,
+      "confidence": 0.95,
+      "sources": [
+        {
+          "title": "Geopolitical Risk (GPR) index, data_gpr_export.xls",
+          "url": "s3://datathon-equipe-5-017820693871/raw/gpr_data/data_gpr_export.xls",
+          "locator": "gprc_twn, 2022-08",
+          "retrieved_at": "2026-11-15T00:00:29+00:00"
+        }
+      ],
+      "evidence_quote": "\"month\": \"2022-08\", \"gpr\": 132.8632, \"gprc_twn\": 0.7402, \"gprhc_twn\": 0.7976",
+      "quote_verified": true
+    },
+    {
+      "id": "geopolitical:TWN:007",
+      "channel": "conflict_exposure",
+      "statement": "Taiwan's historical geopolitical risk index (3-newspaper series) reached 0.5016% in May 2026, confirming the severity of the crisis across both contemporary and historical newspaper sources.",
+      "value": 0.5016,
+      "unit": "pct_articles",
+      "score": 5,
+      "confidence": 0.92,
+      "sources": [
+        {
+          "title": "Geopolitical Risk (GPR) index, data_gpr_export.xls",
+          "url": "s3://datathon-equipe-5-017820693871/raw/gpr_data/data_gpr_export.xls",
+          "locator": "gprhc_twn, 2026-05",
+          "retrieved_at": "2026-11-15T00:00:29+00:00"
+        }
+      ],
+      "evidence_quote": "\"month\": \"2026-05\", \"gpr\": 203.7766, \"gprc_twn\": 0.5347, \"gprhc_twn\": 0.5016",
+      "quote_verified": true
+    },
+    {
+      "id": "geopolitical:TWN:008",
+      "channel": "conflict_exposure",
+      "statement": "Following the May 2026 peak, Taiwan's geopolitical risk declined sharply to 0.1807% in June and 0.0821% by October, suggesting a rapid de-escalation of the immediate crisis but persistence above pre-2021 levels.",
+      "value": 0.0821,
+      "unit": "pct_articles",
+      "score": 3,
+      "confidence": 0.88,
+      "sources": [
+        {
+          "title": "Geopolitical Risk (GPR) index, data_gpr_export.xls",
+          "url": "s3://datathon-equipe-5-017820693871/raw/gpr_data/data_gpr_export.xls",
+          "locator": "gprc_twn, 2026-06 to 2026-10",
+          "retrieved_at": "2026-11-15T00:00:29+00:00"
+        }
+      ],
+      "evidence_quote": "\"month\": \"2026-10\", \"gpr\": 150.52, \"gprc_twn\": 0.0821",
+      "quote_verified": true
+    }
+  ],
+  "summary": "Taiwan experienced an unprecedented geopolitical crisis in early 2026, with risk indicators reaching historic peaks [geopolitical:TWN:001][geopolitical:TWN:002][geopolitical:TWN:007]. The country's GPR index surged to 0.5347% of newspaper articles in May 2026, the highest level ever recorded in the dataset and more than double typical 2024-2025 levels [geopolitical:TWN:002]. This followed an initial spike in March 2026 when both Taiwan's country-specific index (0.3339%) and the global GPR index (330.18) reached extreme levels, surpassing even the March 2022 Ukraine invasion peak [geopolitical:TWN:001][geopolitical:TWN:003]. The crisis appears to have partially de-escalated by October 2026, with Taiwan's index declining to 0.0821%, though this remains elevated compared to pre-2021 baseline levels [geopolitical:TWN:004][geopolitical:TWN:008]. Taiwan's geopolitical risk profile has undergone a structural shift since 2021, with the baseline tripling from approximately 0.08% in 2017-2020 to around 0.25% in 2022-2026 [geopolitical:TWN:005]. The May 2026 event represents the second major crisis episode, following the August 2022 spike to 0.7402% [geopolitical:TWN:006]."
+}

@@ -1,19 +1,7 @@
-"""Risk agent: explains the computed portfolio risk in a few sentences.
+"""Risk agent: explains the computed portfolio risk in a few sentences. It computes no number.
 
-Score pipeline
---------------
-Claims → one score per entity (channel- and confidence-weighted cubic power mean,
-so one severe claim is not averaged away by several minor ones):
-    q = (Σ w_ch·c·s³ / Σ w_ch·c)^(1/3)          ∈ [0, 5]
-    firm_score = q (FILINGS_CHANNEL_WEIGHTS),  R = q/5·100 (GEO_CHANNEL_WEIGHTS)
-
-A1 (country risk)   = g(M₂(R_c/100 ; X_c), m₁)      exposure-weighted, calibrated
-A2 (scenario risk)  = 1 − exp(−EL / EL_ref),  EL = Σ likelihood·impact/5·exposure
-                      (falls back to A1 when no scenarios are available)
-A3 (firm risk)      = g(M₂(firm_i/5 ; w_i), m₃)     holding-weighted, calibrated
-
-M₂ is a weighted quadratic mean (hotspots dominate) and g an odds-ratio S-curve
-that sends the typical level m to 0.5. See tools/portfolio_score.py.
+The score itself is computed by code before this agent runs (web/pipeline.py step 6: web/scoring.py feeding
+tools/portfolio_score.portfolio_scores); every step is written out in docs/risk-agent-calculations.md.
 Numbers come from code (tools/risk_math, web/pipeline). The model only writes prose around them, and code
 rejects any sentence containing a number that is not in the supplied facts (no invented figures)."""
 

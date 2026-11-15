@@ -77,6 +77,9 @@ class Params:
     k3: float = 1.5          # S-curve steepness for A₃
     el_ref: float = 0.15     # expected scenario shock that maps to A₂ = 1 − 1/e ≈ 0.63
     default_exposure: float = 0.5  # scenario exposure when it cannot be computed
+    # Stage 1 (8) – final calibration of R: R* = g(R, r_mid, r_k)  (r_mid = 0.5, r_k = 1 is the identity)
+    r_mid: float = 0.5       # raw R that maps to 50
+    r_k: float = 1.0         # spread around r_mid
 
 
 # ── Tolerance mappings ────────────────────────────────────────────────
@@ -186,6 +189,7 @@ def portfolio_scores(
     tolerance: float | str | None,
     *,
     conf: tuple[float, float, float] = (1.0, 1.0, 1.0),
+    firm_share: float = 1.0,
     p: Params = Params(),
 ) -> dict[str, float]:
     """Compute objective and personalized portfolio risk scores.
@@ -203,6 +207,11 @@ def portfolio_scores(
         Does NOT affect the objective score.
     conf : tuple[float, float, float]
         Confidence for (a1, a2, a3), each ∈ [0, 1].
+    firm_share : float
+        Share s ∈ [0, 1] of the portfolio held in single companies. The
+        company term applies to that sleeve only: funds, bonds, gold and
+        crypto have no filing, which is "not applicable", not "unknown".
+        s = 1 reproduces the original formula.
     p : Params
         All tunable parameters (frozen dataclass).
 
@@ -237,7 +246,11 @@ def portfolio_scores(
 
     # (3) Structural and geopolitical blocks
     #     A₁ and A₃ share one block (they overlap on country fundamentals).
-    F_S = p.alpha * fA1 + (1.0 - p.alpha) * fA3
+    #     The company term only covers the company sleeve s:
+    #     F_S = (1 − (1−α)s)·f(Ã₁) + (1−α)s·f(Ã₃)
+    s = _clamp(firm_share)
+    w3 = (1.0 - p.alpha) * s
+    F_S = (1.0 - w3) * fA1 + w3 * fA3
     F_G = fA2
 
     # (4) Base risk: weighted power mean of the blocks (q > 1 → the worse
@@ -251,9 +264,13 @@ def portfolio_scores(
 
     # (6) Red-flag penalty (weakest-link rule)
     #     Squared hinge: zero below τ, smooth ramp above.
-    peak = max(A1t, A2t, A3t)
+    peak = max(A1t, A2t, A3t) if s > 0 else max(A1t, A2t)
     h = (max(0.0, peak - p.tau) / (1.0 - p.tau)) ** 2 if p.tau < 1.0 else 0.0
     R = R0 + p.kappa * h * (1.0 - R0)
+
+    # (8) Calibration: the raw R of a reference portfolio (r_mid) maps to 50 and
+    #     the S-curve spreads scores around it over the full 0-100 range.
+    R = calibrate(R, p.r_mid, p.r_k)
 
     # ── STAGE 2: Personalized concern ───────────────────────────────
 
@@ -268,12 +285,8 @@ def portfolio_scores(
     C = 100.0 * (sig_num - sig_denom_lo) / denom if denom != 0 else 50.0
 
     # ── Aggregate confidence ────────────────────────────────────────
-    w_total = p.w_S * p.alpha + p.w_S * (1.0 - p.alpha) + p.w_G
-    agg_conf = (
-        p.w_S * p.alpha * c1
-        + p.w_S * (1.0 - p.alpha) * c3
-        + p.w_G * c2
-    ) / w_total
+    w_total = p.w_S + p.w_G
+    agg_conf = (p.w_S * (1.0 - w3) * c1 + p.w_S * w3 * c3 + p.w_G * c2) / w_total
 
     return {
         "objective": round(100.0 * R, 2),

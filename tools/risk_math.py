@@ -1,4 +1,5 @@
 """Deterministic scoring. The LLM explains these numbers; it never invents them."""
+import math
 from statistics import fmean, pstdev
 
 
@@ -15,8 +16,7 @@ def portfolio_risk(weights: dict[str, float], ticker_scores: dict[str, float]) -
 # No LLM-made number enters the score. LLMs only extract facts (verbatim quotes, country lists) that code verifies.
 #
 #   Exposure        X_c  = sum_i w_i w_ic                                  (SEC revenue tables, parsed by code)
-#   Country hazard  g_c  = percentile of GPR_c among its own past months     (Caldara-Iacoviello GPR, 0-1)
-#                          countries without GPR coverage use the global GPR, labelled
+#   Country hazard  g_c  = L_c (1/2 + heat_c/2), see hazard() below          (WGI + Caldara-Iacoviello GPR, 0-1)
 #   Market stress   m    = mean z of OFR FSI, STLFSI4, VIX (3-year window);  A = 1 + 0.15 clip(m, 0, 3)
 #   Firm flags      f_i  = share of the 8 risk channels with a verified quote in the filing (code-checked)
 #   Holding         G_i  = 100 [ a_i A sum_c w_ic g_c + (1 - a_i) f_i ],  a_i = 0.8 if the filing was read, else 1
@@ -65,6 +65,41 @@ def market_stress_level(global_z: dict[str, float | None]) -> float | None:
 
 def amplifier(m: float | None, gamma: float = GAMMA) -> float:
     return 1 + gamma * _clip(m, 0, 3) if m is not None else 1.0
+
+
+# ---------- Country hazard g_c (A2 input): level across countries x heat vs. own history ----------
+#   S_c    = clip((1.5 - PV_c) / 3.5)        internal instability, WGI political stability PV (about -2.5..2.5)
+#   E_c    = clip((ln GPR12_c - lo) / (hi - lo))   external tension: 12-month mean GPR level on a log scale,
+#            lo = 10th percentile, hi = max over the covered countries (tools/gpr.tension_anchors).
+#            Not used for PRESS_COUNTRIES: GPR counts articles in US, UK and Canadian newspapers, so home
+#            coverage inflates their level.
+#   L_c    = mean of the available parts of (S_c, E_c)        (None if neither is available)
+#   heat_c = percentile of GPR_c among its own past months (global GPR when the country is not covered)
+#   g_c    = L_c * (1/2 + heat_c / 2)         a calm country stays calm when its news coverage spikes
+PV_SAFE, PV_DANGER = 1.5, -2.0
+PRESS_COUNTRIES = frozenset({"USA", "GBR", "CAN"})
+
+
+def instability(pv: float | None) -> float | None:
+    """S_c from the WGI political-stability estimate."""
+    return None if pv is None else _clip((PV_SAFE - pv) / (PV_SAFE - PV_DANGER))
+
+
+def tension(mean_12m: float | None, anchors: tuple[float, float] | None, iso3: str = "") -> float | None:
+    """E_c from the 12-month mean GPR level; None for press countries or without data."""
+    if mean_12m is None or mean_12m <= 0 or not anchors or iso3 in PRESS_COUNTRIES:
+        return None
+    lo, hi = anchors
+    return _clip((math.log(mean_12m) - lo) / (hi - lo)) if hi > lo else None
+
+
+def hazard(S: float | None, E: float | None, heat: float | None) -> float | None:
+    """g_c = L_c (1/2 + heat/2). Heat alone (no level) is not a hazard: returns None, so A2 is shrunk."""
+    parts = [x for x in (S, E) if x is not None]
+    if not parts:
+        return None
+    L = sum(parts) / len(parts)
+    return L * (0.5 + 0.5 * (heat if heat is not None else 0.5))
 
 
 def firm_flags(channels_verified: list[str] | None) -> float | None:

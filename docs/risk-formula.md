@@ -3,7 +3,7 @@
 **Rule: no number written by a language model enters the score.** LLMs extract facts (verbatim quotes, shares stated
 in a filing) that code verifies; every number of the score is computed by code.
 
-Code: `tools/portfolio_score.py` (Cedric's formula, unchanged) fed by `web/scoring.py`.
+Code: `tools/portfolio_score.py` (Cedric's formula, adapted 2026-11: company sleeve, final calibration) fed by `web/scoring.py`.
 
 ## 1. Country revenue split $w_{ic}$ (exposure agent, `agents/exposure_agent.py`)
 
@@ -51,8 +51,21 @@ A_2 = \frac{\sum_c X_c\, g_c}{\sum_{c \in \text{covered}} X_c}, \quad
 A_3 = \frac{\sum_i w_i f_i}{\sum_{i \in \text{read}} w_i}$$
 
 - $M_c$: macro fragility, World Bank indicators (point in time) → `tools/risk_calculator.py`, divided by 100.
-- $g_c$: share of the country's past months with a lower Caldara–Iacoviello GPR index.
-- $f_i$: share of the 8 risk channels with a verified quote in the filing (filings agent).
+- $g_c$: country hazard (`tools/risk_math.hazard`, geopolitical agent), a level across countries scaled by heat:
+
+$$S_c = \mathrm{clip}\Big(\tfrac{1.5 - PV_c}{3.5}\Big), \quad
+E_c = \mathrm{clip}\Big(\tfrac{\ln \overline{GPR}^{12m}_c - lo}{hi - lo}\Big), \quad
+L_c = \mathrm{mean}(S_c, E_c), \quad g_c = L_c\,\big(\tfrac12 + \tfrac12\,\text{heat}_c\big)$$
+
+  $PV_c$ is the World Bank WGI political-stability estimate (internal instability). $E_c$ is external tension: the
+  country's 12-month mean GPR level on a log scale, $lo$ = 10th percentile and $hi$ = maximum over the covered countries;
+  it is left out for the USA, the UK and Canada, whose newspapers are GPR's source (home coverage inflates their level).
+  $\text{heat}_c$ is the share of the country's past months with a lower GPR (the global GPR when the country is not
+  covered). Heat alone was the old $g_c$: it is high for almost every country when world tension rises, so a Canadian
+  bond fund and an Israeli one looked alike; it now only modulates the level ($\times 0.5$ to $\times 1$).
+- $f_i$: share of the 8 risk channels with a verified quote in the filing (filings agent). $A_3$ is taken over the
+  single companies only (equities); $s$ = their share of the portfolio. Funds, bonds, gold and crypto have no filing:
+  their company term is *not applicable*, not unknown, so it is not shrunk to the prior.
 - $t$: profile risk level 1→5 mapped to low, low-moderate, moderate, moderate-high, high (0.20 … 0.85).
 - Confidence $c_k$ = share of revenue (or weight) the input covers; unattributed revenue counts as not covered.
 
@@ -64,9 +77,19 @@ $$\tilde A_k = c_k A_k + (1-c_k)\mu, \qquad f(x) = \frac{e^{\lambda x}-1}{e^{\la
 
 Blocks, interaction and red flag:
 
-$$F_S = \alpha f(\tilde A_1) + (1-\alpha) f(\tilde A_3), \quad F_G = f(\tilde A_2), \quad B = w_S F_S + w_G F_G$$
+$$F_S = \big(1-(1-\alpha)s\big) f(\tilde A_1) + (1-\alpha)s\, f(\tilde A_3), \quad F_G = f(\tilde A_2), \quad
+B = \big(w_S F_S^{q} + w_G F_G^{q}\big)^{1/q}$$
 
-$$R_0 = B + \eta F_S F_G (1-B), \qquad h = \left(\frac{\max(0, \max_k \tilde A_k - \tau)}{1-\tau}\right)^2, \qquad R = R_0 + \kappa h (1-R_0)$$
+$$R_0 = B + \eta F_S F_G (1-B), \qquad h = \left(\frac{\max(0, \max_k \tilde A_k - \tau)}{1-\tau}\right)^2, \qquad R_1 = R_0 + \kappa h (1-R_0)$$
+
+Final calibration (the S-curve $g(x,m,k) = r^k/(1+r^k)$, $r = \frac{x/(1-x)}{m/(1-m)}$):
+
+$$R = g(R_1,\ r_{mid},\ r_k)$$
+
+$r_{mid}$ is the raw $R_1$ of the **world-economy portfolio** ($X_c$ = World Bank GDP weights, no company sleeve), so a
+portfolio as risky as the world economy scores 50; $r_k$ spreads scores over 0-100. Both are calibrated on the
+risk ladder (`examples/risk_ladder.json`, ten portfolios from Canadian cash to conflict zones) and checked by
+`tests/test_risk_ladder.py`; rerun `python -m scripts.risk_ladder` against the app after any change.
 
 Personalised concern, with comfort level $\rho(t) = a + b\,t$:
 
@@ -94,5 +117,8 @@ official sources. The what-if per scenario is $E_s = \sum_c X_c\,\mathbb{1}[\tex
 
 - GPR measures news coverage now; it does not forecast. The scenarios carry the forward view.
 - Unknown inputs are shrunk to the neutral prior $\mu = 0.5$, so a holding with no country (gold, crypto) sits mid-scale.
+- Taiwan is not in the World Bank data: its level comes from the GPR level alone. Germany and France get a high
+  external tension from heavy war coverage. Both are data limits, not tuned per country.
+- A filing still being read counts as unknown (prior), so a portfolio's score can move once its filings are read.
 - The returns-based tier is noisy; the peer library starts small and improves with every analysis
   (`python -m agents.exposure_agent --warm --as-of <date>` fills it from the starter universe).

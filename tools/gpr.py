@@ -4,6 +4,7 @@ Point in time: a query for `as_of` only uses months strictly before as_of's mont
 published after the month ends), and the z-score uses history up to that month only.
 """
 import io
+import math
 from datetime import date, datetime, timezone
 
 import httpx
@@ -59,3 +60,13 @@ def at(tbl: dict, iso3: str, as_of: str) -> dict | None:
 
 def covered(tbl: dict) -> list[str]:
     return [k for k in tbl["series"] if k != "GLOBAL"]
+
+
+def tension_anchors(tbl: dict, as_of: str, exclude: frozenset = frozenset({"USA", "GBR", "CAN"})) -> tuple[float, float] | None:
+    """(lo, hi) of ln(12-month mean GPR level) over the covered countries on `as_of`: lo = 10th percentile, hi = max.
+    Press countries are left out (their level is inflated by home coverage)."""
+    logs = sorted(math.log(a["mean_12m"]) for c in covered(tbl) if c not in exclude
+                  for a in [at(tbl, c, as_of)] if a and a["mean_12m"] > 0)
+    if len(logs) < 3:
+        return None
+    return logs[int(0.1 * (len(logs) - 1))], logs[-1]

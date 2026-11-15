@@ -16,18 +16,20 @@ INDICATORS = {   # field -> (World Bank code, label)
     "nonperforming_loans_pct": ("FB.AST.NPER.ZS", "Bank non-performing loans, % of gross loans"),
     "capital_adequacy_pct": ("FB.BNK.CAPA.ZS", "Bank capital to assets, %"),
 }
+# Worldwide Governance Indicators (source 3): a cross-country level, unlike GPR's own-history percentile.
+WGI_PV = ("GOV_WGI_PV.EST", "Political stability and absence of violence/terrorism (WGI estimate, about -2.5 to 2.5)")
 COUNTRY_FIELDS = ("gdp_growth_pct", "inflation_pct", "unemployment_pct", "public_debt_pct_gdp")
 BANK_FIELDS = ("nonperforming_loans_pct", "capital_adequacy_pct")
 PAGE = "https://data.worldbank.org/indicator/{code}"
 WEEK_H = 24 * 7
 
 
-def _get(path: str, **params) -> list:
+def _get(path: str, timeout: float = 60, **params) -> list:
     """GET with a few retries: the API throttles bursts (HTTP 429/5xx) and times out under load."""
     import time
     for attempt in range(4):
         try:
-            r = httpx.get(f"{BASE}/{path}", params={"format": "json", **params}, timeout=60, follow_redirects=True)
+            r = httpx.get(f"{BASE}/{path}", params={"format": "json", **params}, timeout=timeout, follow_redirects=True)
             if r.status_code in (429, 500, 502, 503, 504) and attempt < 3:
                 time.sleep(2 ** attempt)
                 continue
@@ -40,16 +42,31 @@ def _get(path: str, **params) -> list:
     raise RuntimeError("unreachable")
 
 
-def _all(code: str) -> dict[str, list[tuple[int, float]]]:
+def _all(code: str, source: int | None = None) -> dict[str, list[tuple[int, float]]]:
     """One indicator for every country in a single request: {iso3: [(year, value), ...] newest first}."""
     def fetch():
-        payload = _get(f"country/all/indicator/{code}", date="2000:2030", per_page=20000)
+        extra = {"source": source, "timeout": 180} if source else {}
+        payload = _get(f"country/all/indicator/{code}", date="2000:2030", per_page=20000, **extra)
         out: dict[str, list] = {}
         for r in (payload[1] if len(payload) > 1 and payload[1] else []):
             if r.get("value") is not None and r.get("countryiso3code"):
                 out.setdefault(r["countryiso3code"], []).append((int(r["date"]), float(r["value"])))
         return {k: sorted(v, reverse=True) for k, v in out.items()}
-    return cached("worldbank-all", {"code": code}, fetch, hours=WEEK_H)
+    return cached("worldbank-all", {"code": code, **({"source": source} if source else {})}, fetch, hours=WEEK_H)
+
+
+def political_stability(as_of: str) -> dict[str, dict]:
+    """{iso3: {"value", "year", "code", "label", "url"}}: latest WGI political-stability estimate published by
+    `as_of` (year Y used from Y+1). One cached request for every country; Taiwan is not listed by the World Bank."""
+    code, label = WGI_PV
+    last_year = int(as_of[:4]) - 1
+    out = {}
+    for iso3, rows in _all(code, source=3).items():
+        row = next(((y, v) for y, v in rows if y <= last_year), None)
+        if row:
+            out[iso3] = {"value": round(row[1], 3), "year": row[0], "code": code, "label": label,
+                         "url": "https://www.worldbank.org/en/publication/worldwide-governance-indicators"}
+    return out
 
 
 def _countries() -> dict[str, dict]:

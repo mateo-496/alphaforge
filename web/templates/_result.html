@@ -66,11 +66,11 @@
     <div class="block-body">
       {% set gL = ax.by_url.get(r.country_meta.gpr.url) if r.country_meta and r.country_meta.gpr else None %}
       <table class="data">
-        <thead><tr><th>Country</th><th class="num">Revenue</th><th class="num" title="GPR percentile vs. own history">GPR{% if gL %}<a class="annex-ref mono" href="#annex-{{ gL }}">{{ gL }}</a>{% endif %}</th><th class="num">Risk</th><th>Driver</th><th>Through</th></tr></thead>
+        <thead><tr><th>Country</th><th class="num">Revenue</th><th class="num" title="Country hazard: political stability (WGI) and geopolitical-risk level (GPR), scaled by GPR heat vs. own history">Hazard{% if gL %}<a class="annex-ref mono" href="#annex-{{ gL }}">{{ gL }}</a>{% endif %}</th><th class="num">Risk</th><th>Driver</th><th>Through</th></tr></thead>
         <tbody>
           {% for c in r.by_country %}
           <tr{% if loop.index > 5 %} class="more"{% endif %}><td>{{ c.name }}{% if c.proxy %} <span class="muted small" title="No country index: global GPR used">global</span>{% endif %}</td><td class="num mono">{{ "%.1f"|format(c.X * 100) }}%</td>
-            <td class="num mono{% if c.g and c.g >= 0.8 %} hot{% endif %}" title="{{ c.method }}">{{ "%.0f"|format(c.g * 100) if c.g is not none else "—" }}</td>
+            <td class="num mono{% if c.g and c.g >= 0.6 %} hot{% endif %}" title="{{ c.method }}{% if c.heat is not none %} · GPR above {{ "%.0f"|format(c.heat * 100) }}% of its history{% endif %}">{{ "%.0f"|format(c.g * 100) if c.g is not none else "—" }}</td>
             <td class="num mono{% if c.R >= 60 %} hot{% endif %}">{{ "%.0f"|format(c.R) }}</td>
             <td class="muted driver" title="{{ c.driver }}">{{ short_driver(c.driver) }}</td><td class="mono small through" title="{{ c.holdings|join(', ') }}">{{ c.holdings[:6]|join(", ") }}{% if c.holdings|length > 6 %} +{{ c.holdings|length - 6 }}{% endif %}</td></tr>
           {% endfor %}
