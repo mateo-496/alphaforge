@@ -17,6 +17,16 @@ RETRIEVED_TEXT: list[str] = []
 # Country name -> ISO3 code for every country matched during the run.
 MATCHED_COUNTRIES: dict[str, str] = {}
 
+# ISO 3166-1 alpha-3 -> alpha-2 for the 44 countries covered by the GPR file.
+ISO3_TO_ISO2 = {
+    "ARG": "AR", "AUS": "AU", "BEL": "BE", "BRA": "BR", "CAN": "CA", "CHE": "CH", "CHL": "CL", "CHN": "CN",
+    "COL": "CO", "DEU": "DE", "DNK": "DK", "EGY": "EG", "ESP": "ES", "FIN": "FI", "FRA": "FR", "GBR": "GB",
+    "HKG": "HK", "HUN": "HU", "IDN": "ID", "IND": "IN", "ISR": "IL", "ITA": "IT", "JPN": "JP", "KOR": "KR",
+    "MEX": "MX", "MYS": "MY", "NLD": "NL", "NOR": "NO", "PER": "PE", "PHL": "PH", "POL": "PL", "PRT": "PT",
+    "RUS": "RU", "SAU": "SA", "SWE": "SE", "THA": "TH", "TUN": "TN", "TUR": "TR", "TWN": "TW", "UKR": "UA",
+    "USA": "US", "VEN": "VE", "VNM": "VN", "ZAF": "ZA",
+}
+
 @tool
 def extract_portfolio_from_s3_excel(target_countries: list[str], months: int = 24,
                                     sheet_name: str | int = 0) -> dict:
