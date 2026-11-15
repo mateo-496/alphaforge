@@ -1,6 +1,9 @@
-"""Local disk vs S3, switched by STORAGE env var. Keys are the same in both: 'scenarios/global/latest.json'."""
+"""JSON storage on local disk (./data/<key>) or S3 (STORAGE=s3), plus a 24-hour cache for public market data."""
+import hashlib
 import json
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
+from typing import Any, Callable
 
 from core import config
 
@@ -14,7 +17,8 @@ def _s3():
     return boto3.client("s3", region_name=config.REGION)
 
 
-def write_text(key: str, text: str) -> None:
+def write_json(key: str, obj) -> None:
+    text = json.dumps(obj, indent=2, default=str)
     if config.STORAGE == "s3":
         _s3().put_object(Bucket=config.S3_BUCKET, Key=key, Body=text.encode(), ContentType="application/json")
     else:
@@ -23,39 +27,39 @@ def write_text(key: str, text: str) -> None:
         p.write_text(text)
 
 
-def read_text(key: str) -> str:
-    if config.STORAGE == "s3":
-        return _s3().get_object(Bucket=config.S3_BUCKET, Key=key)["Body"].read().decode()
-    return (LOCAL_ROOT / key).read_text()
-
-
-def exists(key: str) -> bool:
+def read_json(key: str):
+    """The stored object, or None if the key does not exist."""
     if config.STORAGE == "s3":
         from botocore.exceptions import ClientError
         try:
-            _s3().head_object(Bucket=config.S3_BUCKET, Key=key)
-            return True
-        except ClientError:
-            return False
-    return (LOCAL_ROOT / key).exists()
+            return json.loads(_s3().get_object(Bucket=config.S3_BUCKET, Key=key)["Body"].read())
+        except ClientError as e:
+            if e.response["Error"]["Code"] in ("NoSuchKey", "404"):
+                return None
+            raise
+    p = LOCAL_ROOT / key
+    return json.loads(p.read_text()) if p.exists() else None
 
 
 def list_keys(prefix: str) -> list[str]:
-    """All keys under a prefix, sorted."""
     if config.STORAGE == "s3":
         keys, pager = [], _s3().get_paginator("list_objects_v2")
         for page in pager.paginate(Bucket=config.S3_BUCKET, Prefix=prefix):
             keys += [o["Key"] for o in page.get("Contents", [])]
         return sorted(keys)
     root = LOCAL_ROOT / prefix
-    if not root.exists():
-        return []
-    return sorted(p.relative_to(LOCAL_ROOT).as_posix() for p in root.rglob("*") if p.is_file())
+    return sorted(p.relative_to(LOCAL_ROOT).as_posix() for p in root.rglob("*") if p.is_file()) if root.exists() else []
 
 
-def write_json(key: str, obj) -> None:
-    write_text(key, json.dumps(obj, indent=2, default=str))
-
-
-def read_json(key: str):
-    return json.loads(read_text(key)) if exists(key) else None
+def cached(namespace: str, params: dict, fetch: Callable[[], Any], hours: int = 24) -> Any:
+    """fetch() result, reused for `hours`. For public data only (prices, SEC tables, FRED), never portfolios."""
+    ident = json.dumps({"namespace": namespace, "params": params}, sort_keys=True, separators=(",", ":"))
+    key = f"market-cache/v2/{namespace}/{hashlib.sha256(ident.encode()).hexdigest()}.json"
+    entry = read_json(key)
+    if entry:
+        age = datetime.now(timezone.utc) - datetime.fromisoformat(entry["cached_at"])
+        if timedelta(0) <= age < timedelta(hours=hours):
+            return entry["data"]
+    data = fetch()
+    write_json(key, {"cached_at": datetime.now(timezone.utc).isoformat(), "data": data})
+    return data

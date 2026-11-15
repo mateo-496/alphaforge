@@ -21,7 +21,7 @@
       {% for r in rows %}
       {% set a = universe.get(r.ticker) %}
       <tr>
-        <td><input class="mono" name="ticker" value="{{ r.ticker }}" list="tickers" autocomplete="off" spellcheck="false" aria-label="Ticker"></td>
+        <td><input class="code" name="ticker" value="{{ r.ticker }}" list="tickers" autocomplete="off" spellcheck="false" aria-label="Ticker"></td>
         <td class="asset-name {% if r.ticker and not a %}bad{% endif %}">{% if a %}{{ a.name }} <span class="muted">· {{ a.currency }}</span>{% elif r.ticker %}Not in universe{% endif %}</td>
         <td class="num"><input class="mono num" name="amount" value="{{ r.amount }}" inputmode="decimal" aria-label="Amount"></td>
         <td><button type="button" class="row-x" aria-label="Remove row">×</button></td>

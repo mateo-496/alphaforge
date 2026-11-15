@@ -1,4 +1,4 @@
-"""Website adapter for the market-stress tools: real exposures replace estimates; failures degrade, never crash."""
+"""Market data per holding and the exposure agent on top of it: reported splits win, failures degrade, never crash."""
 import pytest
 
 from web import market, pipeline, universe as U
@@ -18,16 +18,19 @@ def stub(monkeypatch):
             raise ConnectionError("offline")
         return {"name": t, "unit": "USD", "observations": obs(60), "source": SRC}
 
-    def expo(t):
+    def expo(t, as_of=None):
         if t == "NVDA":
-            return {"ticker": t, "status": "available", "fiscal_year": 2025,
+            return {"ticker": t, "status": "available", "fiscal_year": 2025, "stale": False, "filing": None,
                     "exposures": [{"country": "US", "revenue_share": .44, "source": SRC},
                                   {"country": "TW", "revenue_share": .16, "source": SRC}]}
         if t == "RY":
-            return {"ticker": t, "status": "no_annual_filing", "exposures": []}
+            return {"ticker": t, "status": "no_annual_filing", "exposures": [], "stale": False, "filing": None}
         raise RuntimeError("SEC down")
     monkeypatch.setattr(market.market_data, "get_price_history", prices)
     monkeypatch.setattr(market.market_data, "get_country_exposures", expo)
+    from tools import exposure_priors, worldbank
+    monkeypatch.setattr(exposure_priors, "industry", lambda t: None)
+    monkeypatch.setattr(worldbank, "gdp_weights", lambda as_of, top=60: {"USA": .5, "CHN": .3, "DEU": .2})
 
 
 def test_sec_ticker_mapping():
@@ -37,18 +40,19 @@ def test_sec_ticker_mapping():
     assert market.sec_ticker("SPY", u["SPY"]) is None and market.sec_ticker("BTC-USD", u["BTC-USD"]) is None
 
 
-def test_disclosed_exposure_replaces_estimate(stub):
+def test_disclosed_exposure_wins(stub):
     h = market.fetch_holding("NVDA", U.universe()["NVDA"], "2026-11-12")
     rep = pipeline._asset_report("NVDA", h, "2026-11-12")
-    assert not rep["estimated"] and rep["method"] == "SEC filing, FY2025"
-    assert rep["country_weights"] == {"USA": .44, "TWN": .16, "Other": .4}   # unreported share kept as Other
-    assert rep["source"]["url"] == SRC["url"]
+    cw = rep["country_weights"]
+    assert not rep["estimated"] and rep["tier"]["code"] == "xbrl" and rep["source"]["url"] == SRC["url"]
+    assert cw["USA"] >= .44 and cw["TWN"] >= .16 and abs(sum(cw.values()) - 1) < 1e-6   # unreported 40% follows the prior
 
 
-def test_failures_fall_back_to_labelled_estimate(stub):
+def test_failures_fall_back_to_the_prior(stub):
     h = market.fetch_holding("RY.TO", U.universe()["RY.TO"], "2026-11-12")
     rep = pipeline._asset_report("RY.TO", h, "2026-11-12")
-    assert rep["estimated"] and "40-F" in rep["method"]
+    assert rep["estimated"] and rep["tier"]["code"] == "home_bias" and "no annual filing" in rep["method"]
+    assert rep["country_weights"]["CAN"] == pytest.approx(.6)          # home share, foreign mix from GDP
     h2 = market.fetch_holding("AAPL", U.universe()["AAPL"], "2026-11-12")
     assert h2["exposure_status"] == "error" and pipeline._asset_report("AAPL", h2, "2026-11-12")["estimated"]
 
@@ -56,12 +60,3 @@ def test_failures_fall_back_to_labelled_estimate(stub):
 def test_price_stats():
     st = market.price_stats({"observations": obs(30, 100, 1) + [{"date": "2026-03-01", "value": 65.0}]})
     assert st["ret"] == pytest.approx(65 / 100 - 1) and st["max_drawdown"] == pytest.approx(65 / 129 - 1)
-
-
-def test_summarise_without_stress_data():
-    res = {"facts": [], "series_status": {}, "country_status": {"BRA": "unsupported"}, "as_of": "2026-11-12",
-           "global_z": {}, "m": None, "country_z": {}}
-    holdings = {"NVDA": {"prices": None, "price_error": "offline", "exposure_status": "error"}}
-    view = market.summarise(res, holdings, {"NVDA": 1.0}, U.universe(), {})
-    assert view["unpriced"] == ["NVDA"] and view["unsupported_countries"] == ["BRA"]
-    assert view["m"] is None and view["amplifier"] == 1.0

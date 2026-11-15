@@ -7,18 +7,16 @@ import pytest
 from bs4 import BeautifulSoup
 from botocore.exceptions import ClientError
 
-from tools.market_cache import cached
+from core import config, storage
+from core.storage import cached
 from tools import market_data
-from tools.mcp_server import get_country_market_series
 
 
 class FakeS3:
     def __init__(self):
         self.objects = {}
-        self.reads = 0
 
     def get_object(self, Bucket, Key):
-        self.reads += 1
         if Key not in self.objects:
             raise ClientError({"Error": {"Code": "NoSuchKey"}}, "GetObject")
         return {"Body": io.BytesIO(self.objects[Key])}
@@ -27,10 +25,15 @@ class FakeS3:
         self.objects[Key] = Body
 
 
-def test_s3_cache_reuses_then_refreshes(monkeypatch):
-    s3 = FakeS3()
-    monkeypatch.setenv("S3_BUCKET", "example")
-    monkeypatch.setattr("tools.market_cache.boto3.client", lambda service: s3)
+@pytest.fixture
+def s3(monkeypatch):
+    fake = FakeS3()
+    monkeypatch.setattr(config, "STORAGE", "s3")
+    monkeypatch.setattr(storage, "_s3", lambda: fake)
+    return fake
+
+
+def test_cache_reuses_then_refreshes(s3):
     calls = []
 
     def fetch():
@@ -48,41 +51,27 @@ def test_s3_cache_reuses_then_refreshes(monkeypatch):
 
 
 def test_s3_access_errors_not_hidden(monkeypatch):
-    monkeypatch.setenv("S3_BUCKET", "example")
-
     class Denied:
         def get_object(self, **kwargs):
             raise ClientError({"Error": {"Code": "AccessDenied"}}, "GetObject")
 
-    monkeypatch.setattr("tools.market_cache.boto3.client", lambda service: Denied())
+    monkeypatch.setattr(config, "STORAGE", "s3")
+    monkeypatch.setattr(storage, "_s3", lambda: Denied())
     with pytest.raises(ClientError):
         cached("test", {}, lambda: {})
 
 
-def test_euro_area_series_reused_across_countries(monkeypatch):
-    s3 = FakeS3()
-    monkeypatch.setenv("S3_BUCKET", "example")
-    monkeypatch.setattr("tools.market_cache.boto3.client", lambda service: s3)
-    calls = []
-
-    def fetch(series_id, as_of, days):
-        calls.append(series_id)
-        return {"name": series_id}
-
-    monkeypatch.setattr("tools.market_stress.get_market_series", fetch)
-    first = get_country_market_series("FR", "2026-11-10")
-    second = get_country_market_series("DE", "2026-11-10")
-    assert first["series"] == second["series"]
-    assert calls == ["DEXUSEU"]
-    assert get_country_market_series("ZZ", "2026-11-10")["status"] == "unsupported"
+def test_china_including_hong_kong_is_kept():
+    assert market_data.geo.SEG_MAP["china (including hong kong)"] == "CN"
 
 
 def test_exposures_from_filing_and_unknown_ticker(monkeypatch):
-    monkeypatch.setattr("tools.market_data.cached", lambda namespace, params, fetch: fetch())
+    monkeypatch.setattr("tools.market_data.cached", lambda namespace, params, fetch, **kw: fetch())
     monkeypatch.setattr("tools.market_data._ticker_map",
                         lambda: {"0": {"ticker": "ASML", "cik_str": 123}})
     submission = {"filings": {"recent": {"form": ["20-F"], "accessionNumber": ["1-2-3"],
-                                         "reportDate": ["2025-12-31"]}}}
+                                         "reportDate": ["2025-12-31"],
+                                         "filingDate": ["2026-02-20"]}}}
 
     class Response:
         def __init__(self, value):
@@ -114,12 +103,13 @@ def test_exposures_from_filing_and_unknown_ticker(monkeypatch):
     assert market_data.get_country_exposures("UNKNOWN")["status"] == "no_sec_ticker"
 
 
-def _mock_geography_tables(monkeypatch, year_headers):
-    monkeypatch.setattr("tools.market_data.cached", lambda namespace, params, fetch: fetch())
+def _stub_geography_tables(monkeypatch, year_headers):
+    monkeypatch.setattr("tools.market_data.cached", lambda namespace, params, fetch, **kw: fetch())
     monkeypatch.setattr("tools.market_data._ticker_map",
                         lambda: {"0": {"ticker": "ASML", "cik_str": 123}})
     submission = {"filings": {"recent": {"form": ["20-F"], "accessionNumber": ["1-2-3"],
-                                         "reportDate": ["2025-12-31"]}}}
+                                         "reportDate": ["2025-12-31"],
+                                         "filingDate": ["2026-02-20"]}}}
 
     class Response:
         def __init__(self, value):
@@ -152,7 +142,7 @@ def _mock_geography_tables(monkeypatch, year_headers):
 
 
 def test_exposures_skip_oldest_first_table_and_use_latest_year(monkeypatch):
-    _mock_geography_tables(monkeypatch, ["2023 2024 2025", "2025 2024 2023"])
+    _stub_geography_tables(monkeypatch, ["2023 2024 2025", "2025 2024 2023"])
     parsed = []
 
     def parse(table, html, fiscal_year):
@@ -169,7 +159,7 @@ def test_exposures_skip_oldest_first_table_and_use_latest_year(monkeypatch):
 
 
 def test_exposures_oldest_first_only_stay_unknown(monkeypatch):
-    _mock_geography_tables(monkeypatch, ["2023 2024 2025"])
+    _stub_geography_tables(monkeypatch, ["2023 2024 2025"])
     result = market_data.get_country_exposures("ASML")
     assert result["status"] == "unsupported_fiscal_year_order"
     assert result["exposures"] == []
@@ -177,7 +167,7 @@ def test_exposures_oldest_first_only_stay_unknown(monkeypatch):
 
 def test_exposures_keep_best_table_and_regions(monkeypatch):
     """Two usable tables no longer fail the holding: the one closest to a full breakdown wins; regions kept."""
-    _mock_geography_tables(monkeypatch, ["2025 2024 2023", "2025 2024 2023"])
+    _stub_geography_tables(monkeypatch, ["2025 2024 2023", "2025 2024 2023"])
     results = iter([
         {"fiscal_year": 2025, "segments": [("CN", 29.0)]},
         {"fiscal_year": 2025, "segments": [("US", 60.0)], "region_segments": [("EUROPE", 35.0)]},
@@ -196,7 +186,7 @@ def test_price_history_uses_adjusted_prices_and_cites_currency(monkeypatch):
             assert kwargs["auto_adjust"]
             return pd.DataFrame({"Close": [10.0, 12.0]}, index=pd.to_datetime(["2026-01-02", "2026-01-05"]))
 
-    monkeypatch.setattr("tools.market_data.cached", lambda namespace, params, fetch: fetch())
+    monkeypatch.setattr("tools.market_data.cached", lambda namespace, params, fetch, **kw: fetch())
     monkeypatch.setattr("tools.market_data.yf.Ticker", lambda ticker: Instrument())
     result = market_data.get_price_history("ASML.AS", "2026-01-05")
     assert result["unit"] == "EUR"
@@ -207,28 +197,3 @@ def test_price_history_uses_adjusted_prices_and_cites_currency(monkeypatch):
 def test_price_history_rejects_future_dates():
     with pytest.raises(ValueError, match="Invalid as_of"):
         market_data.get_price_history("MSFT", (date.today() + timedelta(days=1)).isoformat())
-
-
-def test_combined_china_hong_kong_label_is_attributed_to_china():
-    assert market_data._geo_parser._resolve_seg("China (including Hong Kong)") == "CN"
-    assert market_data._geo_parser._resolve_seg("China (including Hong Kong) (2)") == "CN"
-    assert market_data._geo_parser._resolve_seg("Hong Kong") == "HK"
-
-
-def _two_tables(monkeypatch, results):
-    _mock_geography_tables(monkeypatch, ["2025 2024 2023"] * len(results))
-    outputs = iter(results)
-    monkeypatch.setattr("tools.market_data.geo.parse_geo_table",
-                        lambda table, html, year: {"fiscal_year": year, "segments": next(outputs)})
-
-
-def test_exposures_prefer_fullest_consistent_table(monkeypatch):
-    _two_tables(monkeypatch, [[("US", 69.0), ("TW", 20.0), ("CN", 9.0)], [("US", 69.0), ("CN", 9.0)]])
-    result = market_data.get_country_exposures("ASML")
-    assert {e["country"] for e in result["exposures"]} == {"US", "TW", "CN"}
-
-
-def test_exposures_with_contradicting_tables_need_review(monkeypatch):
-    _two_tables(monkeypatch, [[("US", 69.0), ("CN", 9.0)], [("US", 60.0), ("CN", 9.0)]])
-    with pytest.raises(ValueError, match="Conflicting"):
-        market_data.get_country_exposures("ASML")

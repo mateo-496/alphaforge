@@ -2,7 +2,7 @@
 {% block title %}Analysis · AlphaForge{% endblock %}
 {% block content %}
 {% set p = req.profile %}
-<p class="back"><a href="/">← New analysis</a></p>
+<p class="back"><a href="/">‹ New analysis</a></p>
 
 <div id="run" data-run="{{ run.id }}" data-status="{{ run.status }}">
   <section class="intro intro-tight">
@@ -13,7 +13,7 @@
   <section class="progress block" id="progress" {% if run.status == "done" %}hidden{% endif %}>
     <div class="block-head">
       <ol class="phases">
-        {% for key, lbl in [("assets", "Market data & filings"), ("firms", "Company disclosures"), ("market", "Market stress"), ("scenarios", "Scenarios"), ("countries", "Country risk"), ("risk", "Portfolio risk"), ("remediation", "Recommendations")] %}
+        {% for key, lbl in [("assets", "Market data & filings"), ("firms", "Company disclosures"), ("scenarios", "Scenarios"), ("macro", "Macro & sources"), ("countries", "Country risk"), ("risk", "Portfolio risk"), ("remediation", "Recommendations")] %}
         <li data-phase="{{ key }}"><span class="ph-no">{{ "%02d"|format(loop.index) }}</span><span class="ph-label">{{ lbl }}</span><span class="ph-count"></span></li>
         {% endfor %}
       </ol>
@@ -23,6 +23,7 @@
         <span class="now-label" id="now-label">Starting</span>
         <div class="now-stage" id="now-stage"></div>
       </div>
+      <ul class="live" id="live" aria-label="Running in parallel"></ul>
       <div class="bar-track"><span id="bar-fill"></span></div>
       <ol class="log" id="log"></ol>
       <p class="notice" id="run-error" hidden></p>
@@ -36,6 +37,6 @@
 
 <script src="/static/vendor/d3.min.js" defer></script>
 <script src="/static/vendor/topojson-client.min.js" defer></script>
-<script src="/static/map.js" defer></script>
-<script src="/static/run.js" defer></script>
+<script src="{{ static("map.js") }}" defer></script>
+<script src="{{ static("run.js") }}" defer></script>
 {% endblock %}

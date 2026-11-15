@@ -1,4 +1,4 @@
-"""Deterministic market data and portfolio calculations shared through MCP."""
+"""Stress indices and country indicators: OFR FSI and FRED series, plus last-observation change."""
 import csv
 import io
 from datetime import date, datetime, timedelta, timezone
@@ -7,8 +7,7 @@ from urllib.parse import urlencode
 
 import httpx
 
-from core.market_stress import EnrichedPortfolio, MarketSeries, Observation
-from core.schemas import Source
+from core.schemas import MarketSeries, Observation, Source
 
 OFR_URL = "https://www.financialresearch.gov/financial-stress-index/data/fsi.csv"
 FRED_URL = "https://fred.stlouisfed.org/graph/fredgraph.csv"
@@ -83,21 +82,3 @@ def calculate_variation(series: dict) -> dict[str, Any]:
         "relative_change": difference / previous.value if previous.value != 0 else None,
         "source": data.source.model_dump(mode="json"),
     }
-
-
-def decompose_portfolio(request: dict) -> dict[str, Any]:
-    """Compute weighted revenue-country exposures, leaving unknown shares explicit."""
-    portfolio = EnrichedPortfolio.model_validate(request)
-    countries: dict[str, float] = {}
-    holdings = []
-    for holding in portfolio.holdings:
-        exposures = []
-        for exposure in holding.exposures:
-            weighted = holding.weight * exposure.revenue_share
-            countries[exposure.country] = countries.get(exposure.country, 0.0) + weighted
-            exposures.append({**exposure.model_dump(), "portfolio_weight": weighted})
-        unknown = holding.weight * max(0.0, 1.0 - sum(e.revenue_share for e in holding.exposures))
-        holdings.append({"ticker": holding.ticker, "weight": holding.weight,
-                         "countries": exposures, "unknown_weight": unknown})
-    return {"by_ticker": holdings, "by_country": countries,
-            "unknown_weight": sum(h["unknown_weight"] for h in holdings)}

@@ -1,6 +1,6 @@
 {% set ax = annexes(r) %}
   <section class="block coll collapsed" id="annexes">
-    <div class="block-head"><span class="block-no">10</span><h2><button type="button" class="block-toggle" aria-expanded="false">Annexes: sources<i class="chev"></i></button></h2>
+    <div class="block-head"><span class="block-no">07</span><h2><button type="button" class="block-toggle" aria-expanded="false">Annexes: sources<i class="chev"></i></button></h2>
       <p>Every source behind this report, listed once. Scenario cards point here by letter.</p></div>
     <div class="block-body">
       <ol class="annex-list">
@@ -15,6 +15,6 @@
         </li>
         {% endfor %}
       </ol>
-      <p class="annex-note small">Holdings without a filing-based country split use an equal split over the countries recorded for them in <code>examples/portfolios.json</code>, or their listing country, and are marked “estimated”.</p>
+      <p class="annex-note small">Each holding's country split is tagged with the tier that produced it: SEC XBRL table, filing text (quotes checked), last year's filing, sector prior, home-bias prior, or a returns-based estimate. Reported tiers are blended with the prior (weights 1, 0.8 and 0.6).</p>
     </div>
   </section>

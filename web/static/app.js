@@ -46,7 +46,7 @@
   function addRow() {
     const body = $("#holding-rows");
     const tr = document.createElement("tr");
-    tr.innerHTML = `<td><input class="mono" name="ticker" list="tickers" autocomplete="off" spellcheck="false" aria-label="Ticker"></td>
+    tr.innerHTML = `<td><input class="code" name="ticker" list="tickers" autocomplete="off" spellcheck="false" aria-label="Ticker"></td>
       <td class="asset-name"></td>
       <td class="num"><input class="mono num" name="amount" inputmode="decimal" aria-label="Amount"></td>
       <td><button type="button" class="row-x" aria-label="Remove row">×</button></td>`;

@@ -1,25 +1,12 @@
 import pytest
 
-from storage import s3_service
+from core import config, llm, storage
 
 
 @pytest.fixture(autouse=True)
-def no_real_s3(monkeypatch):
-    """Tests must never read or write the shared S3 bucket configured in .env."""
-    monkeypatch.setattr(s3_service, "S3_BUCKET", "")
-
-
-@pytest.fixture(autouse=True)
-def no_real_country_risk_inputs(monkeypatch):
-    """The country risk agent falls back to the macro score when GPR/OFR data cannot be fetched."""
-    from tools import country_risk_inputs
-
-    def offline(*args, **kwargs):
-        raise RuntimeError("network disabled in tests")
-    monkeypatch.setattr(country_risk_inputs, "_gpr_frame", offline)
-    monkeypatch.setattr(country_risk_inputs, "stress_percentile", offline)
-
-
-@pytest.fixture(autouse=True)
-def no_real_world_bank(monkeypatch):
-    monkeypatch.setenv("USE_WORLD_BANK", "0")
+def _isolate(tmp_path, monkeypatch):
+    """Tests never touch the shared S3 bucket, CloudTrail or the repo's data/ folder."""
+    monkeypatch.setattr(config, "STORAGE", "local")
+    monkeypatch.setattr(config, "CLOUDTRAIL_CHANNEL_ARN", "")
+    monkeypatch.setattr(storage, "LOCAL_ROOT", tmp_path / "data")
+    monkeypatch.setattr(llm, "TRACE_DIR", tmp_path / "traces")
