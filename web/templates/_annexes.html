@@ -1,0 +1,20 @@
+{% set ax = annexes(r) %}
+  <section class="block coll collapsed" id="annexes">
+    <div class="block-head"><span class="block-no">07</span><h2><button type="button" class="block-toggle" aria-expanded="false">Annexes: sources<i class="chev"></i></button></h2>
+      <p>Every source behind this report, listed once. Scenario cards point here by letter.</p></div>
+    <div class="block-body">
+      <ol class="annex-list">
+        {% for a in ax.list %}
+        <li id="annex-{{ a.letter }}">
+          <span class="annex-letter mono">{{ a.letter }}</span>
+          <span class="annex-body">
+            <span class="annex-name">{{ a.name }}</span>
+            <a class="annex-url mono" href="{{ a.url }}" target="_blank" rel="noopener">{{ a.url }}</a>
+            <span class="annex-meta">{% if a.retrieved %}Retrieved {{ a.retrieved }}{% endif %}{% if a.cited_by %}{% if a.retrieved %} · {% endif %}Cited by {{ a.cited_by|join(", ") }}{% elif a.retrieved %} · read, not quoted{% endif %}</span>
+          </span>
+        </li>
+        {% endfor %}
+      </ol>
+      <p class="annex-note small">Company exposures and country risk scores are placeholders (<code>web/mock.py</code>) until the filings and country agents are connected.</p>
+    </div>
+  </section>

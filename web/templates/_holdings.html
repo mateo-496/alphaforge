@@ -1,0 +1,39 @@
+<div id="holdings" data-mode="{{ mode }}">
+  <div class="mode-row">
+    <span class="label-inline">Amounts are</span>
+    {% for m, lbl in [("weight", "weights (%)"), ("quantity", "quantities (units)"), ("value", "market values")] %}
+    <label class="radio-text"><input type="radio" name="mode" value="{{ m }}" {% if mode == m %}checked{% endif %}
+      {% if m == "quantity" and not prices_ok %}disabled{% endif %}> {{ lbl }}</label>
+    {% endfor %}
+  </div>
+
+  {% if warnings %}
+  <ul class="notice">
+    {% for w in warnings %}<li>{{ w }}</li>{% endfor %}
+  </ul>
+  {% endif %}
+
+  <table class="holdings">
+    <thead>
+      <tr><th class="col-ticker">Ticker</th><th>Name</th><th class="num col-amount" id="amount-head">{{ {"weight": "Weight %", "quantity": "Units", "value": "Value"}[mode] }}</th><th class="col-x"></th></tr>
+    </thead>
+    <tbody id="holding-rows">
+      {% for r in rows %}
+      {% set a = universe.get(r.ticker) %}
+      <tr>
+        <td><input class="mono" name="ticker" value="{{ r.ticker }}" list="tickers" autocomplete="off" spellcheck="false" aria-label="Ticker"></td>
+        <td class="asset-name {% if r.ticker and not a %}bad{% endif %}">{% if a %}{{ a.name }} <span class="muted">· {{ a.currency }}</span>{% elif r.ticker %}Not in universe{% endif %}</td>
+        <td class="num"><input class="mono num" name="amount" value="{{ r.amount }}" inputmode="decimal" aria-label="Amount"></td>
+        <td><button type="button" class="row-x" aria-label="Remove row">×</button></td>
+      </tr>
+      {% endfor %}
+    </tbody>
+    <tfoot>
+      <tr>
+        <td colspan="2"><button type="button" class="link" id="add-row">+ Add holding</button></td>
+        <td class="num mono" id="total"></td>
+        <td></td>
+      </tr>
+    </tfoot>
+  </table>
+</div>

@@ -1,0 +1,58 @@
+  <section class="scen" id="scenarios" data-highlight="{{ r.highlight or '' }}">
+    {% set ax = annexes(r) %}
+    <div class="scen-head">
+      <span class="block-no">05</span>
+      <h2>Scenarios</h2>
+      <p>Written weekly by the scenario agent from Eurasia Group, BlackRock, CFR and Atlantic Council, anchored on the
+        GPR index. Select scenarios to see the countries they hit and how much of this portfolio's revenue sits there.</p>
+    </div>
+    <div class="map-wrap">
+      <svg id="map" role="img" aria-label="World map of scenario intensity"></svg>
+      <div class="map-tip" id="map-tip" hidden></div>
+      <div class="legend"><span>Scenario intensity</span><i class="legend-ramp"></i><span class="legend-ends"><b>low</b><b>high</b></span></div>
+    </div>
+    <div class="scen-impact" id="scen-impact"><span class="muted">No scenario selected.</span></div>
+    <div class="scen-controls" data-run="{{ run.id }}">
+      <button type="button" class="ghost" id="regen-btn">Regenerate scenarios</button>
+      <label class="hl">Highlight country
+        <select id="hl-country">
+          <option value="">None</option>
+          {% for code, name in scenario_countries %}<option value="{{ code }}" {% if r.highlight == code %}selected{% endif %}>{{ name }}</option>{% endfor %}
+        </select>
+      </label>
+      <span class="regen-status" id="regen-status">{% for g in r.scenario_sets %}{{ g.label }}: generated {{ g.computed_at[:10] }}{% if not loop.last %} · {% endif %}{% else %}No scenario set yet. Regenerate to run the agent.{% endfor %}</span>
+    </div>
+
+    {% for g in r.scenario_sets %}
+    {% set grp = r.scenarios|selectattr("scope", "equalto", g.scope)|list %}
+    <div class="scen-group">
+      <h3>{{ g.label }} <span class="muted small">· {{ grp|length }} scenarios · week {{ g.week }}</span></h3>
+      {% if g.after_as_of %}<p class="flag-note">Built from sources dated {{ g.computed_at[:10] }}, after the analysis date. No earlier set exists, so these scenarios carry look-ahead.</p>{% endif %}
+      <div class="scen-list">
+        {% for s in grp %}
+        <label class="scen-item{% if loop.index > 6 %} more{% endif %}">
+          <input type="checkbox" value="{{ s.key }}">
+          <span class="scen-name">{{ s.name }}{% if s.status == "fading" %} <em class="badge badge-fading" title="Not in this week's sources; decaying">fading</em>{% endif %}</span>
+          <span class="scen-desc">{{ s.summary|truncate(350, true, "…", 0) }}</span>
+          <span class="metrics">
+            <span class="m-label">Revenue exposed</span>
+            <span class="m-track"><i class="m-fill m-rev" style="width: {{ [s.exposure * 100, 100]|min|round(1) }}%"></i></span>
+            <span class="m-val mono">{{ "%.0f"|format(s.exposure * 100) }}%</span>
+            <span class="m-label">Impact</span>
+            <span class="m-track"><i class="m-fill" style="width: {{ s.impact * 20 }}%"></i></span>
+            <span class="m-val mono">{{ s.impact }}/5</span>
+            <span class="m-label">Probability, 12 mo</span>
+            <span class="m-track"><i class="m-fill" style="width: {{ (s.likelihood * 100)|round(1) }}%"></i></span>
+            <span class="m-val mono">{{ "%.0f"|format(s.likelihood * 100) }}%</span>
+          </span>
+          {% set src = s.evidence|selectattr("quote_verified")|list %}
+          {% if src %}<span class="scen-src small">Sources
+            {% for e in src if ax.by_url.get(e.url) %}<a class="annex-ref mono" href="#annex-{{ ax.by_url[e.url] }}" title="“{{ e.quote }}”">{{ ax.by_url[e.url] }}</a>{% endfor %}
+          </span>{% endif %}
+        </label>
+        {% endfor %}
+      </div>
+      {% if grp|length > 6 %}<button type="button" class="show-more" data-more>Show all {{ grp|length }}<i class="chev"></i></button>{% endif %}
+    </div>
+    {% endfor %}
+  </section>
