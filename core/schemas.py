@@ -17,7 +17,7 @@ class Source(BaseModel):
 
 
 class Entity(BaseModel):
-    ticker: str
+    ticker: Optional[str] = Field(None, description="Stock ticker of the company; null if unknown or not a company")
     country: Optional[str] = Field(None, description="ISO 3166-1 alpha-2 code of the issuer, if known")
 
 

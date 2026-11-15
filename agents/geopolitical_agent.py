@@ -18,7 +18,11 @@ from core import config
 from core.citations import CitationError, resolve_citations
 from core.schemas import AgentOutput, Claim, DraftOutput, Entity, Source
 from tools import geopolitics
+from pathlib import Path
 
+PROJECT_ROOT = Path(__file__).resolve().parent.parent
+OUTPUT_DIR = PROJECT_ROOT / "outputs"
+OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 AGENT = "geopolitical"
 
 SYSTEM_PROMPT = """You are the Geopolitical analyst of AlphaForge, a geopolitical portfolio-risk system.
@@ -80,7 +84,7 @@ def run(country: str, as_of: str | None = None) -> AgentOutput:
     summary = re.sub(r"\[(\d+)\]",
                      lambda m: f"[{claims[int(m.group(1)) - 1].id}]" if 0 < int(m.group(1)) <= len(claims) else m.group(0),
                      draft.summary)
-    return AgentOutput(agent=AGENT, entity=Entity(ticker=iso3), as_of=as_of, claims=claims, summary=summary)
+    return AgentOutput(agent=AGENT, entity=Entity(ticker=None, country=geopolitics.ISO3_TO_ISO2.get(iso3)), as_of=as_of, claims=claims, summary=summary)
 
 
 if __name__ == "__main__":
@@ -92,12 +96,13 @@ if __name__ == "__main__":
     p.add_argument("--as-of", default=None)
     args = p.parse_args()
 
-    os.makedirs("outputs", exist_ok=True)
     for c in args.countries:
         report = run(c, args.as_of)
         print("\n" + report.model_dump_json(indent=2))
-        with open(f"outputs/{report.entity.ticker}_geopolitical.json", "w", encoding="utf-8") as fh:
+        output_file = OUTPUT_DIR / f"{report.entity.country or c}_geopolitical.json"
+        with open(output_file, "w", encoding="utf-8") as fh:
             fh.write(report.model_dump_json(indent=2))
+        print(f"\nSaved {output_file}")
         unverified = [cl.id for cl in report.claims if not cl.quote_verified]
         if unverified:
             print(f"WARNING: quotes not found in tool output: {unverified}")
