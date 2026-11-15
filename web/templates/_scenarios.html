@@ -1,7 +1,7 @@
   <section class="scen" id="scenarios" data-highlight="{{ r.highlight or '' }}">
     {% set ax = annexes(r) %}
     <div class="scen-head">
-      <span class="block-no">05</span>
+      <span class="block-no">07</span>
       <h2>Scenarios</h2>
       <p>Written weekly by the scenario agent from Eurasia Group, BlackRock, CFR and Atlantic Council, anchored on the
         GPR index. Select scenarios to see the countries they hit and how much of this portfolio's revenue sits there.</p>
@@ -35,15 +35,10 @@
           <span class="scen-name">{{ s.name }}{% if s.status == "fading" %} <em class="badge badge-fading" title="Not in this week's sources; decaying">fading</em>{% endif %}</span>
           <span class="scen-desc">{{ s.summary|truncate(350, true, "…", 0) }}</span>
           <span class="metrics">
-            <span class="m-label">Revenue exposed</span>
+            <span class="m-label" title="Revenue in countries directly involved">Revenue at stake</span>
             <span class="m-track"><i class="m-fill m-rev" style="width: {{ [s.exposure * 100, 100]|min|round(1) }}%"></i></span>
             <span class="m-val mono">{{ "%.0f"|format(s.exposure * 100) }}%</span>
-            <span class="m-label">Impact</span>
-            <span class="m-track"><i class="m-fill" style="width: {{ s.impact * 20 }}%"></i></span>
-            <span class="m-val mono">{{ s.impact }}/5</span>
-            <span class="m-label">Probability, 12 mo</span>
-            <span class="m-track"><i class="m-fill" style="width: {{ (s.likelihood * 100)|round(1) }}%"></i></span>
-            <span class="m-val mono">{{ "%.0f"|format(s.likelihood * 100) }}%</span>
+            <span class="m-label muted small" style="grid-column: 1 / -1">Agent's view, not in the score: {{ "%.0f"|format(s.likelihood * 100) }}% in 12 months, impact {{ s.impact }}/5</span>
           </span>
           {% set src = s.evidence|selectattr("quote_verified")|list %}
           {% if src %}<span class="scen-src small">Sources

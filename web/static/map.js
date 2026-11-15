@@ -62,12 +62,12 @@ window.initScenarioMap = async function (runId) {
     const box = document.getElementById("scen-impact");
     if (!selected.size) { box.innerHTML = '<span class="muted">No scenario selected.</span>'; return; }
     const per = Object.entries(data.assets).map(([t, a]) =>
-      [t, a.weight * Object.entries(a.country_weights).reduce((s, [c, w]) => s + w * (I[c] || 0), 0)]);
+      [t, a.weight * Object.entries(a.country_weights).reduce((s, [c, w]) => s + ((I[c] || 0) >= 0.5 ? w : 0), 0)]);
     const total = per.reduce((s, [, v]) => s + v, 0);
     const top = per.filter(([, v]) => v > 0.005).sort((a, b) => b[1] - a[1]).slice(0, 4);
     const names = [...selected].map(id => byId[id].name).join(" + ");
     box.innerHTML = `<span class="imp-num mono">${(total * 100).toFixed(0)}%</span>
-      <span>of the portfolio's revenue, weighted by intensity, sits in countries hit by <b>${names}</b>.
+      <span>of the portfolio's revenue sits in countries directly involved in <b>${names}</b>.
       ${top.length ? `Most exposed: ${top.map(([t, v]) => `<span class="mono">${t}</span> ${(v * 100).toFixed(1)}%`).join(", ")}.` : "No holding is materially exposed."}</span>`;
   }
 

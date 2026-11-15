@@ -1,14 +1,8 @@
 # Risk agent
 
-The intended role of the [risk agent](risk_agent.py) is to combine country
-exposures, geopolitical scores and portfolio weights into per-ticker and
-portfolio risk measures. Its numerical calculations are delegated to
-[tools/risk_math.py](../tools/risk_math.py); the intended model call supplies
-an explanation rather than overriding those calculations.
+[risk_agent.py](risk_agent.py) writes the 3–4 summary sentences at the top of the report from the computed
+figures: the score, the top holdings and countries, the profile and the conflicts with it.
 
-## Current status
-
-This is legacy code and is not currently runnable: it imports removed schemas
-and the removed `run_agent` helper, and references the removed `USE_MOCK`
-configuration. It needs migration to the current data contracts before it
-can be used in the chain.
+Code computes every number (`tools/risk_math`). `check()` drops any sentence containing a number that does not
+appear in the supplied facts, so the model cannot add figures. If the call fails, the report uses a summary
+built by code.

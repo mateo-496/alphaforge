@@ -89,3 +89,18 @@ country, whereas filings-based revenue exposures are specific to each issuer.
 Feeds provide current, potentially revised values rather than historical
 publication vintages. Publication delays and revised prices mean the result is
 **not** suitable for a point-in-time backtest.
+
+## On the website
+
+`web/market.py` runs the same tools in-process (no MCP server needed) and reuses this agent's
+`_claims_from_facts`, `_evaluate` and `_reports`. Differences, required for a live page:
+- **Tolerant failures:** a failing ticker, series or SEC lookup is recorded and shown, and never fails the run.
+  If LLM scoring fails, the observed values are shown unscored.
+- **Parallel holdings:** holdings are fetched in parallel. SEC requests remain rate-limited by the tool's lock.
+- **Ticker mapping:** Yahoo symbols are mapped to SEC tickers for the filings lookup (`RY.TO` → `RY`,
+  `CNR.TO` → `CNI`). ETFs, gold and crypto are skipped.
+- **Analysis date:** prices use the user's analysis date with a one-year window, for return, drawdown and volatility.
+- **Exposures feed the risk score:** disclosed SEC country revenue replaces the estimated exposure, and the
+  unreported share stays as "Other". Each filing appears in the report's annexes.
+- **Cache:** with no `S3_BUCKET`, `tools/market_cache.py` caches on local disk with the same 24-hour rule.
+  Set `MARKET_CACHE=s3` to make S3 mandatory.

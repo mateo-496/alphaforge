@@ -3,7 +3,16 @@ import os
 
 REGION = os.environ.get("AWS_REGION", "us-east-1")
 BEDROCK_MODEL_ID = os.environ.get("BEDROCK_MODEL_ID", "us.anthropic.claude-sonnet-4-5-20250929-v1:0")
-SEC_IDENTITY = os.environ.get("SEC_IDENTITY", "AlphaForge Datathon alphaforge@example.com")
+def _sec_identity(raw: str) -> str:
+    """The SEC wants 'Name email' as the User-Agent VALUE. A value pasted with its header name
+    ('User-Agent: Name email') would be sent as 'User-Agent: User-Agent: ...', which the SEC rejects."""
+    import re
+    return re.sub(r"^\s*user-agent\s*:\s*", "", raw.strip().strip('"\''), flags=re.I)
+
+
+SEC_IDENTITY = _sec_identity(os.environ.get("SEC_IDENTITY", "AlphaForge Datathon alphaforge@example.com"))
+if os.environ.get("SEC_IDENTITY"):
+    os.environ["SEC_IDENTITY"] = SEC_IDENTITY   # every reader (tools/market_data) gets the clean value
 
 # USE_MOCK=1: agents return mock outputs, no Bedrock / network calls.
 USE_MOCK = os.environ.get("USE_MOCK", "1") == "1"

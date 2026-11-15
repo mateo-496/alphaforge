@@ -14,7 +14,7 @@ from strands import Agent
 from agents.base import build_model
 from core.citations import resolve_citations
 from core.schemas import AgentOutput, Claim, DraftOutput, Entity, Source
-from tools.filings import (FILING_META, RETRIEVED_TEXT, get_annual_filing_info,
+from tools.filings import (FILING_META, RETRIEVED_TEXT, SEARCHES, get_annual_filing_info,
                            get_risk_factors, quote_is_verified, search_filing)
 
 AGENT = "filings"
@@ -24,8 +24,8 @@ Goal: for one company, extract atomic geopolitical claims using ONLY its SEC ann
 
 Method:
 1. Call get_annual_filing_info, then get_risk_factors.
-2. Call search_filing for geographic revenue ("geographic", "revenue by", "long-lived assets"),
-   for the countries you see mentioned, and for "sanctions", "export control", "tariff", "supplier".
+2. Call search_filing at most 6 times in total. Best patterns: "geographic", "China", "sanctions",
+   "export control", "tariff", "supplier". Then stop and answer.
 3. Emit one claim per finding. A claim has ONE channel from the fixed taxonomy
    (trade_tariffs, export_controls, sanctions, conflict_exposure, supply_chain, regulatory,
    fx_capital_controls, financial_stress), one statement, and a number (value + unit) when the filing gives one.
@@ -38,11 +38,11 @@ Rules:
 - score = severity 0-5; confidence = 0-1 that the claim is correctly read from the filing.
 - Do NOT set ids or sources; code does that.
 - summary: short prose where EVERY sentence ends with claim citations by position, e.g. "... [1][3]."
-- At most ~10 claims, most material first."""
+- At most ~6 claims, most material first."""
 
 
 def build_agent() -> Agent:
-    return Agent(model=build_model(), system_prompt=SYSTEM_PROMPT, name="filings_agent",
+    return Agent(model=build_model(), system_prompt=SYSTEM_PROMPT, name="filings_agent", callback_handler=None,
                  tools=[get_annual_filing_info, get_risk_factors, search_filing])
 
 
@@ -51,6 +51,7 @@ def run(ticker: str, as_of: str | None = None) -> AgentOutput:
     as_of = as_of or date.today().isoformat()
     RETRIEVED_TEXT.pop(ticker, None)
     FILING_META.pop(ticker, None)
+    SEARCHES.pop(ticker, None)
     result = build_agent()(f"Analyze {ticker} as of {as_of}.", structured_output_model=DraftOutput)
     draft: DraftOutput = result.structured_output
 

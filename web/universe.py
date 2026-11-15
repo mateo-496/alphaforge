@@ -81,20 +81,47 @@ def _last_on_or_before(dates: list, values: list, day: str) -> float | None:
     return values[i - 1] if i else None
 
 
-def price_in(ticker: str, day: str, base: str) -> float | None:
-    """Close on or before `day` (no look-ahead), converted to the base currency."""
+def _usdcad(day: str) -> float | None:
     s = _series()
-    if not s or ticker not in s[0]:
+    if s:
+        rate = _last_on_or_before(s[1], s[2], day)
+        if rate:
+            return rate
+    try:  # FRED DEXCAUS (CAD per USD) through the shared market tools and cache
+        from datetime import date as _d
+        from tools.market_cache import cached
+        from tools.market_stress import get_market_series
+        day = min(day, _d.today().isoformat())
+        ser = cached("market-series", {"series_id": "DEXCAUS", "as_of": day, "days": 30},
+                     lambda: get_market_series("DEXCAUS", day, 30))
+        return ser["observations"][-1]["value"]
+    except Exception:
         return None
-    prices, fd, fv = s
-    px = _last_on_or_before(*prices[ticker], day)
-    ccy = universe()[ticker]["currency"]
-    if px is None or ccy == base:
-        return px
-    rate = _last_on_or_before(fd, fv, day)  # USD -> CAD
+
+
+def price_in(ticker: str, day: str, base: str) -> tuple[float | None, str]:
+    """(close on or before `day`, converted to the base currency; source or error).
+    Starter dataset first, then Yahoo Finance through the shared market tools (any listed ticker)."""
+    px, ccy, src = None, universe().get(ticker, {}).get("currency", "USD"), "starter dataset"
+    s = _series()
+    if s and ticker in s[0]:
+        px = _last_on_or_before(*s[0][ticker], day)
+    if px is None:
+        try:
+            from datetime import date as _d
+            from tools.market_data import get_price_history
+            ser = get_price_history(ticker, min(day, _d.today().isoformat()), 10)
+            px, ccy, src = ser["observations"][-1]["value"], ser["unit"].upper(), "Yahoo Finance"
+        except Exception as e:
+            return None, f"no starter price and Yahoo failed: {type(e).__name__}"
+    if ccy == base:
+        return px, src
+    if {ccy, base} != {"USD", "CAD"}:
+        return None, f"price in {ccy}, no conversion to {base}"
+    rate = _usdcad(day)
     if rate is None:
-        return None
-    return px * rate if base == "CAD" else px / rate
+        return None, "no USD/CAD rate"
+    return (px * rate if base == "CAD" else px / rate), src
 
 
 def prices_available() -> bool:

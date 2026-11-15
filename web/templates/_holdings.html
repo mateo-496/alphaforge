@@ -3,7 +3,7 @@
     <span class="label-inline">Amounts are</span>
     {% for m, lbl in [("weight", "weights (%)"), ("quantity", "quantities (units)"), ("value", "market values")] %}
     <label class="radio-text"><input type="radio" name="mode" value="{{ m }}" {% if mode == m %}checked{% endif %}
-      {% if m == "quantity" and not prices_ok %}disabled{% endif %}> {{ lbl }}</label>
+> {{ lbl }}</label>
     {% endfor %}
   </div>
 

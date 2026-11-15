@@ -71,36 +71,118 @@
   document.body.addEventListener("htmx:afterSwap", updateTotal);
   updateTotal();
 
-  // ---- Persona presets ----
-  const set = (name, value) => {
-    const els = $$(`[name="${name}"]`, form);
-    if (!els.length) return;
-    const type = els[0].type;
-    if (type === "radio") els.forEach(el => (el.checked = el.value === String(value)));
-    else if (type === "checkbox" && els.length === 1 && typeof value === "boolean") els[0].checked = value;
-    else if (type === "checkbox") els.forEach(el => (el.checked = (value || []).includes(el.value)));
-    else els[0].value = value ?? "";
+  // ---- Sliders: live value label + filled track ----
+  function paint(sl) {
+    const r = $("input[type=range]", sl), out = $(".slider-val", sl);
+    const labels = sl.dataset.labels ? JSON.parse(sl.dataset.labels) : null, unit = sl.dataset.unit;
+    const v = +r.value, lo = +r.min, hi = +r.max;
+    out.textContent = labels ? labels[v] : unit === "year" ? (v >= hi ? `${v}+ years` : `${v} year${v > 1 ? "s" : ""}`)
+                    : unit === "%" ? (v === 0 ? "None" : `${v}%`) : v;
+    r.style.setProperty("--fill", `${((v - lo) / (hi - lo)) * 100}%`);
+  }
+  $$(".slider").forEach(sl => { paint(sl); $("input", sl).addEventListener("input", () => paint(sl)); });
+
+  // ---- Tag boxes: searchable multi-select with optional write-in ----
+  const boxes = {};
+  $$(".tagbox").forEach(box => {
+    const name = box.dataset.name, free = box.dataset.free === "1";
+    const opts = JSON.parse($(".tag-options", box).textContent);
+    const byV = Object.fromEntries(opts.map(o => [o.v, o]));
+    const input = $(".tag-input", box), menu = $(".tag-menu", box), chips = $(".chips", box);
+    let active = -1, shown = [];
+    const values = () => $$("input[type=hidden]", chips).map(i => i.value);
+
+    function add(v, label) {
+      if (!v || values().includes(v)) return;
+      const chip = document.createElement("span");
+      chip.className = "chip";
+      const o = byV[v];
+      chip.innerHTML = `${o && o.g ? `<i>${o.g}</i>` : ""}<span></span><button type="button" aria-label="Remove">×</button><input type="hidden">`;
+      chip.querySelector("span").textContent = label || (o ? o.l : v.replace(/^text:/, ""));
+      const hid = chip.querySelector("input"); hid.name = name; hid.value = v;
+      chip.querySelector("button").addEventListener("click", () => { chip.remove(); input.focus(); });
+      chips.appendChild(chip);
+    }
+    function render() {
+      const q = input.value.trim().toLowerCase(), have = new Set(values());
+      shown = opts.filter(o => !have.has(o.v) && (!q || o.l.toLowerCase().includes(q) || (o.g || "").toLowerCase().startsWith(q))).slice(0, 60);
+      let html = "", g = null;
+      shown.forEach((o, i) => {
+        if (o.g && o.g !== g) { g = o.g; html += `<li class="tag-group" aria-hidden="true">${g}</li>`; }
+        const on = i === active || (active < 0 && q && i === 0);   // Enter picks the first match
+        html += `<li role="option" data-i="${i}" class="${on ? "on" : ""}">${o.l.replace(/[<>&]/g, "")}</li>`;
+      });
+      if (free && q && !opts.some(o => o.l.toLowerCase() === q))
+        html += `<li role="option" data-i="free" class="free ${active === shown.length || (active < 0 && !shown.length) ? "on" : ""}">Add “${input.value.trim().replace(/[<>&]/g, "")}”</li>`;
+      menu.innerHTML = html || '<li class="tag-empty">No match</li>';
+      menu.hidden = false; input.setAttribute("aria-expanded", "true");
+    }
+    function pick(i) {
+      if (i === "free" || i === shown.length) {
+        const t = input.value.trim();
+        if (free && t) add(name === "exclusions" ? `text:${t}` : t);
+      } else if (shown[i]) add(shown[i].v);
+      input.value = ""; active = -1;
+      menu.hidden = true; input.setAttribute("aria-expanded", "false");   // reopen on typing / arrow / click
+    }
+    input.addEventListener("focus", render);
+    input.addEventListener("input", () => { active = -1; render(); });
+    input.addEventListener("keydown", e => {
+      const n = shown.length + (free && input.value.trim() ? 1 : 0);
+      if (e.key === "ArrowDown") { e.preventDefault(); if (menu.hidden) { active = -1; render(); return; } active = Math.min(n - 1, active + 1); render(); }
+      else if (e.key === "ArrowUp") { e.preventDefault(); active = Math.max(0, active - 1); render(); }
+      else if (e.key === "Enter") {   // highlighted item; otherwise the first match; otherwise the typed text
+        e.preventDefault();
+        if (!input.value.trim() && active < 0) return;
+        pick(active >= 0 ? (active === shown.length ? "free" : active) : (shown.length ? 0 : "free"));
+      }
+      else if (e.key === "Backspace" && !input.value) { const last = chips.lastElementChild; if (last) last.remove(); }
+      else if (e.key === "Escape") { menu.hidden = true; }
+    });
+    menu.addEventListener("mousedown", e => {
+      const li = e.target.closest("li[data-i]");
+      if (li) { e.preventDefault(); pick(li.dataset.i === "free" ? "free" : +li.dataset.i); }
+    });
+    input.addEventListener("blur", () => setTimeout(() => { menu.hidden = true; input.setAttribute("aria-expanded", "false"); }, 120));
+    box.addEventListener("click", e => {
+      if (e.target.closest(".tag-field") && e.target.tagName !== "BUTTON") { input.focus(); if (menu.hidden) render(); }
+    });
+    boxes[name] = { set(vals) { chips.innerHTML = ""; (vals || []).forEach(v => add(v)); } };
+  });
+
+  // ---- Persona presets and sample profiles ----
+  const setRange = (name, v) => {
+    const r = form.querySelector(`input[type=range][name="${name}"]`);
+    if (r) { r.value = v; paint(r.closest(".slider")); }
   };
-  const DEFAULTS = { age: "", horizon_years: 10, risk_tolerance: "moderate", objective: "balanced",
-    experience: "intermediate", esg_importance: "none", avoid_controversies: false, crypto_max: 0,
-    max_single_weight: 0.25, excluded_sectors: [], excluded_tickers: [], avoid_countries: [],
-    interests: [], notes: "" };
+  const DEFAULTS = { age: "", horizon_years: 10, risk_level: 3, objective_level: 3, experience: "intermediate",
+    esg_importance: "none", crypto_max: 0, max_single_weight: 0.25, exclusions: [], avoid_countries: [],
+    interests: [], notes: "", base_currency: null };
 
   function fill(p) {
-    for (const [k, v] of Object.entries({ ...DEFAULTS, ...p })) {
-      if (k === "crypto_max" || k === "max_single_weight") set(k, Math.round(v * 100));
-      else if (k === "excluded_tickers") set(k, v.join(", "));
-      else set(k, v);
-    }
+    p = { ...DEFAULTS, ...p };
+    form.querySelector("input[name=age]").value = p.age ?? "";
+    setRange("horizon_years", Math.min(30, p.horizon_years));
+    setRange("risk_level", p.risk_level);
+    setRange("objective_level", p.objective_level);
+    setRange("experience", { beginner: 1, intermediate: 2, advanced: 3 }[p.experience] || 2);
+    setRange("esg", { none: 0, some: 1, high: 2 }[p.esg_importance] || 0);
+    setRange("crypto_max", Math.round(p.crypto_max * 100));
+    setRange("max_single_weight", Math.round(p.max_single_weight * 100 / 5) * 5);
+    boxes.exclusions && boxes.exclusions.set(p.exclusions);
+    boxes.avoid_countries && boxes.avoid_countries.set(p.avoid_countries);
+    boxes.interests && boxes.interests.set(p.interests);
+    form.querySelector("textarea[name=notes]").value = p.notes || "";
+    if (p.base_currency) form.querySelector("select[name=base_currency]").value = p.base_currency;
   }
+
   $$("input[name=persona]", form).forEach(r => r.addEventListener("change", () => {
     fill((PERSONAS[r.value] || {}).profile || DEFAULTS);
   }));
-  // Sample portfolios come with their own investor profile: fill it as a custom investor.
   $$("[data-sample]").forEach(b => b.addEventListener("click", () => {
     const s = SAMPLES[b.dataset.sample];
     if (!s) return;
-    set("persona", "");
+    $$("input[name=persona]", form).forEach(x => (x.checked = x.value === ""));
     fill(s.profile);
     $$("[data-sample]").forEach(x => x.classList.toggle("on", x === b));
   }));

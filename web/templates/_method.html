@@ -1,0 +1,30 @@
+{% set k = r.method %}
+  <section class="block coll collapsed" id="method">
+    <div class="block-head"><span class="block-no">09</span><h2><button type="button" class="block-toggle" aria-expanded="false">How the score is computed<i class="chev"></i></button></h2>
+      <p>Risk formula v2 (tools/risk_math). Every input is measured; no number written by a language model enters the score.</p></div>
+    <div class="block-body">
+      <ol class="formula mono small">
+        <li><span>Exposure</span><span>X<sub>c</sub> = Σ<sub>i</sub> w<sub>i</sub> w<sub>ic</sub> &nbsp;(SEC revenue tables, parsed by code)</span></li>
+        <li><span>Hazard</span><span>g<sub>c</sub> = share of the country's past months with a lower GPR index &nbsp;(0–1)</span></li>
+        <li><span>Market</span><span>m = mean z of OFR FSI, STLFSI4, VIX = {{ "%+.2f"|format(k.m) if k.m is not none else "n/a" }}; &nbsp;A = 1 + {{ k.gamma }} · clip(m, 0, 3) = ×{{ "%.2f"|format(k.A) }}</span></li>
+        <li><span>Filing flags</span><span>f<sub>i</sub> = channels with a verified quote / 8 &nbsp;(only when the filing was read)</span></li>
+        <li><span>Holding</span><span>G<sub>i</sub> = 100 · [a<sub>i</sub> · A · Σ<sub>c</sub> w<sub>ic</sub> g<sub>c</sub> + (1 − a<sub>i</sub>) · f<sub>i</sub>], &nbsp;a<sub>i</sub> = {{ 1 - k.lam }} if read, else 1</span></li>
+        <li><span>Portfolio</span><span>P = Σ<sub>i</sub> w<sub>i</sub> G<sub>i</sub> = <b>{{ "%.1f"|format(r.score) }}</b> &nbsp;(50 = a typical month, calm markets)</span></li>
+        <li><span>Verdict</span><span>clear if P ≤ tolerance (risk level 1→5: {{ k.tolerance.values()|join(", ") }}), A ≤ 1.15 and no broken profile limit</span></li>
+        <li><span>What-if</span><span>E<sub>s</sub> = Σ<sub>c</sub> X<sub>c</sub> · 1[country directly involved in s] &nbsp;(not in P)</span></li>
+      </ol>
+      <p class="small">Because P is a sum, every point is traced: the points in the holdings and countries tables add up to the score
+        (country points {{ "%.1f"|format(r.score - r.firm_points) }} + filing flags {{ "%.1f"|format(r.firm_points) }}).</p>
+
+      <h3 class="sub">What each agent extracts</h3>
+      <table class="data inputs">
+        <thead><tr><th>Agent</th><th>Information</th><th>Formula term</th><th>Status</th></tr></thead>
+        <tbody>
+          {% for i in k.inputs %}
+          <tr class="{{ i.status }}"><td class="small">{{ i.agent }}</td><td>{{ i.field }}</td><td class="mono small">{{ i.term }}</td>
+            <td class="small"><span class="tag tag-{{ i.status }}">{{ {"used": "in formula", "context": "shown, not scored", "candidate": "candidate"}[i.status] }}</span></td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </section>

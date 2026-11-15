@@ -12,6 +12,10 @@ set_identity(SEC_IDENTITY)
 
 ANNUAL_FORMS = ["10-K", "20-F", "40-F"]
 MAX_CHARS = 12_000
+# Searches per company. Without a cap the agent keeps searching filings that answer nothing (40-F wrappers),
+# which made one company take minutes. After the cap the tool tells the model to write its answer.
+MAX_SEARCHES = 6
+SEARCHES: dict[str, int] = {}
 
 # Every text returned to the model, used afterwards to verify evidence quotes.
 RETRIEVED_TEXT: dict[str, list[str]] = {}
@@ -88,10 +92,13 @@ def search_filing(ticker: str, as_of: str, pattern: str, max_matches: int = 15) 
         pattern: Text to search for.
         max_matches: Max number of matching passages to return.
     """
+    n = SEARCHES[ticker.upper()] = SEARCHES.get(ticker.upper(), 0) + 1
+    if n > MAX_SEARCHES:
+        return {"error": f"search budget of {MAX_SEARCHES} used. Stop calling tools and write the claims now."}
     f = _annual_filing(ticker.upper(), as_of)
     matches = [{"location": m.location,
                 "context": _remember(ticker, re.sub(r"\s+", " ", m.context))}
-               for m in f.grep(pattern)[:max_matches]]
+               for m in f.grep(pattern)[:min(max_matches, 8)]]
     return {**_meta(f, ticker), "pattern": pattern, "n_matches": len(matches), "matches": matches}
 
 

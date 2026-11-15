@@ -1,7 +1,7 @@
 """Data contracts shared by agents, orchestrator, API and website."""
 from typing import Literal, Optional
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, computed_field
 
 # Fixed channel taxonomy shared by ALL data-retrieving agents.
 Channel = Literal["trade_tariffs", "export_controls", "sanctions", "conflict_exposure",
@@ -109,7 +109,6 @@ class AssetReport(BaseModel):
 
 
 # ---------- Request inputs (web form -> orchestrator) ----------
-RiskTolerance = Literal["low", "low_moderate", "moderate", "high"]
 
 
 class Holding(BaseModel):
@@ -122,29 +121,44 @@ class Portfolio(BaseModel):
     base_currency: Literal["CAD", "USD"] = "CAD"
 
 
+RISK_LEVELS = {1: "very_low", 2: "low", 3: "moderate", 4: "high", 5: "very_high"}
+OBJECTIVE_LEVELS = {1: "preserve", 2: "income", 3: "balanced", 4: "growth", 5: "max_growth"}
+
+
 class InvestorProfile(BaseModel):
-    persona: Optional[str] = Field(None, description="'amira' | 'mateo' | 'robert' | None for custom")
+    persona: Optional[str] = Field(None, description="'amira' | 'mateo' | 'robert' | sample id | None for custom")
     age: Optional[int] = Field(None, ge=18, le=100)
     horizon_years: int = Field(10, ge=1, le=40)
-    risk_tolerance: RiskTolerance = "moderate"
-    objective: Literal["preserve", "balanced", "growth"] = "balanced"
+    risk_level: int = Field(3, ge=1, le=5, description="1 very low ... 5 very high")
+    objective_level: int = Field(3, ge=1, le=5, description="1 preserve capital ... 5 maximum growth")
     experience: Literal["beginner", "intermediate", "advanced"] = "intermediate"
     esg_importance: Literal["none", "some", "high"] = "none"
     avoid_controversies: bool = False
     crypto_max: float = Field(0.0, ge=0, le=1, description="Max total weight in crypto assets")
     max_single_weight: float = Field(0.25, gt=0, le=1, description="Max weight of any single holding")
-    excluded_sectors: list[str] = Field(default_factory=list)
+    excluded_sectors: list[str] = Field(default_factory=list, description="GICS sectors")
+    excluded_themes: list[str] = Field(default_factory=list, description="e.g. 'Fossil fuels', 'Weapons', free text")
     excluded_tickers: list[str] = Field(default_factory=list)
     avoid_countries: list[str] = Field(default_factory=list, description="ISO 3166-1 alpha-3 codes")
-    interests: list[str] = Field(default_factory=list)
+    interests: list[str] = Field(default_factory=list, description="Labels or free text")
     notes: str = ""
+
+    @computed_field
+    @property
+    def risk_tolerance(self) -> str:
+        return RISK_LEVELS[self.risk_level]
+
+    @computed_field
+    @property
+    def objective(self) -> str:
+        return OBJECTIVE_LEVELS[self.objective_level]
 
 
 class AnalysisRequest(BaseModel):
     portfolio: Portfolio
     profile: InvestorProfile
     as_of: str = Field(description="YYYY-MM-DD; agents only use data published on or before this date")
-    scenario_country: Optional[str] = Field(None, description="ISO alpha-3: also show the 5 most dangerous scenarios for it")
+    scenario_country: Optional[str] = Field(None, description="ISO alpha-3: also show the 5 most dangerous scenarios for it (set from the report page)")
 
 
 # ---------- Geopolitical scenarios (scenario agent) ----------

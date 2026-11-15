@@ -175,15 +175,17 @@ def test_exposures_oldest_first_only_stay_unknown(monkeypatch):
     assert result["exposures"] == []
 
 
-def test_exposures_conflicting_usable_tables_still_fail(monkeypatch):
+def test_exposures_keep_best_table_and_regions(monkeypatch):
+    """Two usable tables no longer fail the holding: the one closest to a full breakdown wins; regions kept."""
     _mock_geography_tables(monkeypatch, ["2025 2024 2023", "2025 2024 2023"])
     results = iter([
         {"fiscal_year": 2025, "segments": [("CN", 29.0)]},
-        {"fiscal_year": 2025, "segments": [("CN", 30.0)]},
+        {"fiscal_year": 2025, "segments": [("US", 60.0)], "region_segments": [("EUROPE", 35.0)]},
     ])
     monkeypatch.setattr("tools.market_data.geo.parse_geo_table", lambda *args: next(results))
-    with pytest.raises(ValueError, match="Conflicting geographic revenue tables"):
-        market_data.get_country_exposures("ASML")
+    result = market_data.get_country_exposures("ASML")
+    assert result["status"] == "available"
+    assert {e["country"]: e["revenue_share"] for e in result["exposures"]} == {"US": .6, "REGION:EUROPE": .35}
 
 
 def test_price_history_uses_adjusted_prices_and_cites_currency(monkeypatch):

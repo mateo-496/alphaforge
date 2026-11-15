@@ -85,3 +85,4 @@ xlrd
 python-dotenv==1.0.1
 yfinance==1.8.0
 edgar-geo-revenue==0.1.2
+edgartools==6.1.0

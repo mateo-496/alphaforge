@@ -4,13 +4,21 @@
   if (!root) return;
   const runId = root.dataset.run;
   const $ = id => document.getElementById(id);
-  const PHASES = ["assets", "countries", "scenarios", "risk", "report"];
+  const PHASES = ["assets", "firms", "market", "scenarios", "countries", "risk", "remediation"];
   let seq = 0, done = false;
-  const counts = { assets: [0, 0], countries: [0, 0] };
+  const counts = { assets: [0, 0], firms: [0, 0], countries: [0, 0] };
+  // Phases 02-04 run in parallel and share one "now" slot. Track what is in flight per phase so that,
+  // when one phase finishes, the slot switches to what is still running instead of freezing on the
+  // last event of the finished phase (e.g. the last scenario while the filings agent keeps reading).
+  const inflight = {}, started = {};
+  const LABELS = { assets: "Market data & filings", firms: "Company disclosures", market: "Market stress",
+                   scenarios: "Scenarios", countries: "Country risk", risk: "Portfolio risk", remediation: "Recommendations" };
+  let pendingShown = null, needPending = false, shownItem = null;
 
   const esc = s => String(s ?? "").replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
 
   function show(label, title, sub) {
+    pendingShown = null; needPending = false; shownItem = null;
     $("now-label").textContent = label;
     const stage = $("now-stage");
     const old = stage.querySelector(".now-item:not(.out)");
@@ -22,12 +30,40 @@
     requestAnimationFrame(() => requestAnimationFrame(() => el.classList.remove("in")));
   }
 
+  function showItem(phase, kind, id, label) {
+    const n = (inflight[phase] || new Map()).size;
+    show(phase === "firms" ? "Filings agent reading" : kind === "asset" ? "Prices and filings" : "Assessing country",
+         label, id + (n > 1 ? ` · ${n} in progress` : ""));
+    shownItem = { phase, id };
+  }
+
   function log(id, label, detail) {
     const li = document.createElement("li");
     li.innerHTML = `<span class="mono">${esc(id)}</span><span>${esc(label)}</span><span class="muted mono">${esc(detail)}</span>`;
     $("log").prepend(li);
     [...$("log").children].slice(8).forEach(n => n.remove());
   }
+
+  const ago = t => { const s = Math.round((Date.now() - t) / 1000); return s < 60 ? `${s}s` : `${Math.floor(s / 60)}m ${s % 60}s`; };
+
+  function pendingSub(phase) {
+    const items = [...(inflight[phase] || new Map()).values()];
+    return (items.length ? `reading ${items.slice(0, 3).join(", ")}${items.length > 3 ? "…" : ""} · ` : "") + ago(started[phase]);
+  }
+
+  function showPending() {
+    const still = PHASES.filter(p => document.querySelector(`.phases li[data-phase="${p}"]`)?.dataset.state === "active");
+    if (!still.length) return;
+    const p = still[0];
+    show("Still running", LABELS[p], pendingSub(p));
+    pendingShown = p;
+  }
+
+  setInterval(() => {   // keep the elapsed time moving so a long step never looks frozen
+    if (done || !pendingShown) return;
+    const sub = document.querySelector("#now-stage .now-item:not(.out) .now-sub");
+    if (sub) sub.textContent = pendingSub(pendingShown);
+  }, 1000);
 
   function phaseState(phase, state) {
     const li = document.querySelector(`.phases li[data-phase="${phase}"]`);
@@ -46,23 +82,36 @@
   function handle(e) {
     if (e.kind === "phase") {
       phaseState(e.phase, e.status === "start" ? "active" : "done");
+      if (e.status === "start") started[e.phase] = Date.now();
+      else { delete inflight[e.phase]; needPending = true; }
       if (e.status === "start" && e.phase === "risk") show("Computing", "Portfolio risk", "tools/risk_math");
-      if (e.status === "start" && e.phase === "report") show("Writing", "Report", "drivers · watchlist · what-ifs");
+      if (e.status === "start" && e.phase === "countries") show("Geopolitical agent", "Country risk", "GPR index · scenarios");
       if (e.status === "start" && e.phase === "scenarios") show("Checking", "Geopolitical scenarios", "weekly set");
+      if (e.status === "start" && e.phase === "market") show("Fetching", "Market stress indicators", "OFR · FRED");
       if (e.status === "done" && e.detail) log("", e.label || e.phase, e.detail);
     } else if (e.kind === "asset" || e.kind === "country") {
-      const phase = e.kind === "asset" ? "assets" : "countries";
+      const phase = e.phase || (e.kind === "asset" ? "assets" : "countries");
+      (inflight[phase] ??= new Map());
       if (e.status === "start") {
+        inflight[phase].set(e.id, e.label);
         count(phase, 0);
-        show(e.kind === "asset" ? "Reading filings" : "Assessing country", e.label, e.id);
+        showItem(phase, e.kind, e.id, e.label);
       } else {
-        count(phase, 1);
+        inflight[phase].delete(e.id);
+        // The panel showed this item: switch to one still in flight, so a finished company never stays on
+        // screen as "loading" while it already appears as done in the list below.
+        if (shownItem && shownItem.phase === phase && shownItem.id === e.id) {
+          const next = [...inflight[phase].entries()][0];
+          if (next) showItem(phase, e.kind, next[0], next[1]);
+          else needPending = true;
+        }
+        if (phase !== "countries") count(phase, 1);
         log(e.id, e.label, e.detail);
       }
     } else if (e.kind === "source") {
       let host = e.detail;
       try { host = new URL(e.detail).hostname.replace(/^www\./, ""); } catch (_) {}
-      if (e.status === "start") show("Reading source", e.label, host);
+      if (e.status === "start") show(e.phase === "market" ? "Fetching indicator" : "Reading source", e.label, host);
       else log("", e.label, e.detail);
     } else if (e.kind === "llm") {
       if (e.status === "start") show("Writing", e.label, e.detail);
@@ -95,6 +144,7 @@
     try {
       const r = await (await fetch(`/runs/${runId}/events?after=${seq}`)).json();
       for (const e of r.events) { handle(e); seq = e.seq; }
+      if (needPending) showPending();
       if (r.status === "done" && !done) { done = true; return setTimeout(finish, 600); }
       if (r.status === "error") return;
     } catch (_) { /* network blip: retry */ }
