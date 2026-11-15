@@ -36,21 +36,20 @@ def _now() -> datetime:
     return datetime.now(timezone.utc)
 
 
-def _usable(s: ScenarioSet | None) -> ScenarioSet | None:
-    """Real mode never uses sets produced by the offline test mode, and vice versa."""
-    return s if s and s.mock == config.SCENARIO_USE_MOCK else None
+def _load(d: dict | None) -> ScenarioSet | None:
+    """Sets written by the old offline test mode (invented scenarios) are never used."""
+    return ScenarioSet(**d) if d and not d.get("mock") else None
 
 
 def latest(scope: str) -> ScenarioSet | None:
-    d = storage.read_json(f"scenarios/{scope}/latest.json")
-    return _usable(ScenarioSet(**d)) if d else None
+    return _load(storage.read_json(f"scenarios/{scope}/latest.json"))
 
 
 def _weekly(scope: str) -> list[tuple[str, ScenarioSet]]:
     keys = [k for k in storage.list_keys(f"scenarios/{scope}/") if re.search(r"/\d{4}-W\d{2}\.json$", k)]
     out = []
     for k in keys:
-        s = _usable(ScenarioSet(**storage.read_json(k)))
+        s = _load(storage.read_json(k))
         if s:
             out.append((k.rsplit("/", 1)[1][:-5], s))
     return out
@@ -116,7 +115,7 @@ def _ema(new: float, old: float, a: float) -> float:
 
 
 def merge(previous: ScenarioSet | None, fresh: list[DraftScenario], scope: str, alpha: float,
-          query_key: str, n: int, mock: bool, inputs: list[dict] | None = None) -> ScenarioSet:
+          query_key: str, n: int, inputs: list[dict] | None = None) -> ScenarioSet:
     """x_t = alpha * x_new + (1 - alpha) * x_{t-1} for likelihood, impact, country intensities and sector shocks.
     New scenarios enter at their fresh values; scenarios missing from the new run decay and are dropped after
     DROP_AFTER_MISSING weeks. Text fields (name, summary, signposts) come from the newest run."""
@@ -159,7 +158,7 @@ def merge(previous: ScenarioSet | None, fresh: list[DraftScenario], scope: str, 
     out.sort(key=lambda s: -s.likelihood * s.impact)
     return ScenarioSet(scope=scope, week=week, computed_at=now.isoformat(timespec="seconds"), alpha=alpha,
                        query_keys=((previous.query_keys if previous else []) + [query_key])[-12:],
-                       mock=mock, inputs=inputs or [], scenarios=out[:n])
+                       inputs=inputs or [], scenarios=out[:n])
 
 
 # ---------- entry point ----------
@@ -179,8 +178,7 @@ def generate(country: str | None = None, force: bool = False, on_event=None) -> 
     except Exception as e:  # the failed query is saved too
         storage.write_json(query_key, {"scope": scope, "error": f"{type(e).__name__}: {e}"})
         raise
-    merged = merge(prev, draft.scenarios, scope, config.SCENARIO_ALPHA, query_key, n, config.SCENARIO_USE_MOCK,
-                   record.get("inputs"))
+    merged = merge(prev, draft.scenarios, scope, config.SCENARIO_ALPHA, query_key, n, record.get("inputs"))
     storage.write_json(query_key, {"scope": scope, **record, "previous_week": prev.week if prev else None,
                                    "merged": merged.model_dump()})
     storage.write_json(f"scenarios/{scope}/{merged.week}.json", merged.model_dump())

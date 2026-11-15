@@ -1,7 +1,7 @@
   <section class="scen" id="scenarios" data-highlight="{{ r.highlight or '' }}">
     {% set ax = annexes(r) %}
     <div class="scen-head">
-      <span class="block-no">07</span>
+      <span class="block-no">05</span>
       <h2>Scenarios</h2>
       <p>Written weekly by the scenario agent from Eurasia Group, BlackRock, CFR and Atlantic Council, anchored on the
         GPR index. Select scenarios to see the countries they hit and how much of this portfolio's revenue sits there.</p>
@@ -24,10 +24,11 @@
     </div>
 
     {% for g in r.scenario_sets %}
-    {% set grp = r.scenarios|selectattr("scope", "equalto", g.scope)|list %}
+    {% set grp = r.scenarios|selectattr("scope", "equalto", g.scope)|sort(attribute="exposure", reverse=true)|list %}
     <div class="scen-group">
       <h3>{{ g.label }} <span class="muted small">· {{ grp|length }} scenarios · week {{ g.week }}</span></h3>
-      {% if g.after_as_of %}<p class="flag-note">Built from sources dated {{ g.computed_at[:10] }}, after the analysis date. No earlier set exists, so these scenarios carry look-ahead.</p>{% endif %}
+      {% if g.after_as_of and grp %}<p class="flag-note">Built from sources dated {{ g.computed_at[:10] }}, after the analysis date. No earlier set exists, so these scenarios carry look-ahead.</p>{% endif %}
+      {% if not grp %}<p class="muted">The analysis did not surface any scenario for {{ g.label|replace("Most dangerous for ", "") }} this week.</p>{% endif %}
       <div class="scen-list">
         {% for s in grp %}
         <label class="scen-item{% if loop.index > 6 %} more{% endif %}">
@@ -38,7 +39,6 @@
             <span class="m-label" title="Revenue in countries directly involved">Revenue at stake</span>
             <span class="m-track"><i class="m-fill m-rev" style="width: {{ [s.exposure * 100, 100]|min|round(1) }}%"></i></span>
             <span class="m-val mono">{{ "%.0f"|format(s.exposure * 100) }}%</span>
-            <span class="m-label muted small" style="grid-column: 1 / -1">Agent's view, not in the score: {{ "%.0f"|format(s.likelihood * 100) }}% in 12 months, impact {{ s.impact }}/5</span>
           </span>
           {% set src = s.evidence|selectattr("quote_verified")|list %}
           {% if src %}<span class="scen-src small">Sources

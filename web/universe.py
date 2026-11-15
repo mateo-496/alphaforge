@@ -1,6 +1,7 @@
 """Starter universe, prices and FX lookups used to validate and normalise uploaded portfolios."""
 import csv
 import io
+import json
 import os
 from bisect import bisect_right
 from functools import lru_cache
@@ -18,6 +19,12 @@ KIND = {"equity": "equity", "etf": "etf_equity", "bond_etf": "etf_bond", "commod
 
 
 @lru_cache
+def load() -> dict:
+    """Sample portfolios and their assets' countries (examples/portfolios.json)."""
+    return json.loads((HERE.parent / "examples" / "portfolios.json").read_text())
+
+
+@lru_cache
 def starter() -> dict[str, dict]:
     """The 31 starter assets (with daily prices)."""
     with open(HERE / "assets_universe.csv", newline="") as f:
@@ -28,7 +35,6 @@ def starter() -> dict[str, dict]:
 def universe() -> dict[str, dict]:
     """Starter assets + the sample-portfolio assets (examples/portfolios.json). Starter wins on conflicts,
     and sample tickers that alias a starter one (RY -> RY.TO, BTC -> BTC-USD) are not duplicated."""
-    from core.sample_portfolios import load
     u = dict(starter())
     for t, a in load()["assets"].items():
         if _starter_alias(t):
@@ -89,7 +95,7 @@ def _usdcad(day: str) -> float | None:
             return rate
     try:  # FRED DEXCAUS (CAD per USD) through the shared market tools and cache
         from datetime import date as _d
-        from tools.market_cache import cached
+        from core.storage import cached
         from tools.market_stress import get_market_series
         day = min(day, _d.today().isoformat())
         ser = cached("market-series", {"series_id": "DEXCAUS", "as_of": day, "days": 30},

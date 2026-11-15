@@ -4,15 +4,15 @@
   if (!root) return;
   const runId = root.dataset.run;
   const $ = id => document.getElementById(id);
-  const PHASES = ["assets", "firms", "market", "scenarios", "countries", "risk", "remediation"];
+  const PHASES = ["assets", "firms", "scenarios", "macro", "countries", "risk", "remediation"];
   let seq = 0, done = false;
-  const counts = { assets: [0, 0], firms: [0, 0], countries: [0, 0] };
+  const counts = {};
   // Phases 02-04 run in parallel and share one "now" slot. Track what is in flight per phase so that,
   // when one phase finishes, the slot switches to what is still running instead of freezing on the
   // last event of the finished phase (e.g. the last scenario while the filings agent keeps reading).
   const inflight = {}, started = {};
   const LABELS = { assets: "Market data & filings", firms: "Company disclosures", market: "Market stress",
-                   scenarios: "Scenarios", countries: "Country risk", risk: "Portfolio risk", remediation: "Recommendations" };
+                   scenarios: "Scenarios", macro: "Macro & sources", countries: "Country risk", risk: "Portfolio risk", remediation: "Recommendations" };
   let pendingShown = null, needPending = false, shownItem = null;
 
   const esc = s => String(s ?? "").replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
@@ -35,6 +35,22 @@
     show(phase === "firms" ? "Filings agent reading" : kind === "asset" ? "Prices and filings" : "Assessing country",
          label, id + (n > 1 ? ` · ${n} in progress` : ""));
     shownItem = { phase, id };
+  }
+
+  // Everything running at this moment, one chip each: assets, countries and the scenario step all run in parallel.
+  const GROUP = { assets: "Filings", firms: "Disclosures", countries: "Country", scenarios: "Scenarios", market: "Market", macro: "Macro" };
+  function renderLive() {
+    const chips = [];
+    for (const [phase, items] of Object.entries(inflight)) {
+      if (phase === "scenarios" || !(items instanceof Map)) continue;
+      for (const [id, label] of items) chips.push(`<li><b>${esc(GROUP[phase] || phase)}</b> ${esc(label)}</li>`);
+    }
+    for (const p of Object.keys(started)) {
+      if (p === "scenarios" && document.querySelector(`.phases li[data-phase="scenarios"]`)?.dataset.state === "active")
+        chips.push(`<li><b>${GROUP.scenarios}</b> weekly set</li>`);
+    }
+    const el = $("live");
+    if (el) { el.innerHTML = chips.join(""); el.hidden = !chips.length; }
   }
 
   function log(id, label, detail) {
@@ -74,7 +90,7 @@
   }
 
   function count(phase, k) {
-    const c = counts[phase]; c[k]++;
+    const c = (counts[phase] ??= [0, 0]); c[k]++;
     const el = document.querySelector(`.phases li[data-phase="${phase}"] .ph-count`);
     if (el) el.textContent = `${c[1]}/${c[0]}`;
   }
@@ -84,10 +100,11 @@
       phaseState(e.phase, e.status === "start" ? "active" : "done");
       if (e.status === "start") started[e.phase] = Date.now();
       else { delete inflight[e.phase]; needPending = true; }
+      renderLive();
       if (e.status === "start" && e.phase === "risk") show("Computing", "Portfolio risk", "tools/risk_math");
       if (e.status === "start" && e.phase === "countries") show("Geopolitical agent", "Country risk", "GPR index · scenarios");
       if (e.status === "start" && e.phase === "scenarios") show("Checking", "Geopolitical scenarios", "weekly set");
-      if (e.status === "start" && e.phase === "market") show("Fetching", "Market stress indicators", "OFR · FRED");
+      if (e.status === "start" && e.phase === "macro") show("Country risk agent", "Macro & official sources", "World Bank");
       if (e.status === "done" && e.detail) log("", e.label || e.phase, e.detail);
     } else if (e.kind === "asset" || e.kind === "country") {
       const phase = e.phase || (e.kind === "asset" ? "assets" : "countries");
@@ -105,9 +122,10 @@
           if (next) showItem(phase, e.kind, next[0], next[1]);
           else needPending = true;
         }
-        if (phase !== "countries") count(phase, 1);
+        count(phase, 1);
         log(e.id, e.label, e.detail);
       }
+      renderLive();
     } else if (e.kind === "source") {
       let host = e.detail;
       try { host = new URL(e.detail).hostname.replace(/^www\./, ""); } catch (_) {}

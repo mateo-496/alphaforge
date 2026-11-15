@@ -6,7 +6,8 @@ Order of work:
   2. Profile fixes: holdings that break a stated limit (single-holding cap, crypto cap, exclusions, volatility).
   3. Risk fixes, only if the score is above the profile's tolerance: move the largest contributor into the
      best-fitting fund, sized to bring the score back to tolerance, at most 3 swaps.
-Every swap is re-scored with the full formula on the new weights. A simulation, not advice.
+Every swap is re-scored with the full formula on the new weights (`score_fn`, the pipeline passes the portfolio
+score of web/scoring.py). A simulation, not advice.
 """
 from tools import risk_math
 
@@ -61,13 +62,15 @@ def _top_country(parts: dict, names: dict) -> str:
 
 
 def propose(p: dict, weights: dict, parts: dict, cand_parts: dict, cand_cw: dict, checks: list[dict],
-            verdict: dict, uni: dict, names: dict) -> list[dict]:
-    """parts / cand_parts: risk_math.holding_score output per ticker. Returns swaps in order, each re-scored."""
+            verdict: dict, uni: dict, names: dict, score_fn=None) -> list[dict]:
+    """parts / cand_parts: per ticker {"G": holding score, "countries": {c: points}}. score_fn(weights) -> portfolio
+    score on the same scale as verdict["tolerance"] (default: risk_math.portfolio_score). Swaps in order, re-scored."""
     if verdict["clear"]:
         return []
     allp = {**parts, **cand_parts}
+    score_fn = score_fn or (lambda weights: _score(weights, allp))
     w = dict(weights)
-    P0 = P = _score(w, allp)
+    P0 = P = score_fn(w)
     st = style(p)
     ranked = sorted((c for c in cand_parts if _fit(c, p, uni, cand_parts[c]["G"], cand_cw[c]) is not None),
                     key=lambda c: _fit(c, p, uni, cand_parts[c]["G"], cand_cw[c]))
@@ -82,7 +85,7 @@ def propose(p: dict, weights: dict, parts: dict, cand_parts: dict, cand_cw: dict
         before = P
         w[sell] -= move
         w[buy] = w.get(buy, 0) + move
-        P = _score(w, allp)
+        P = score_fn(w)
         out.append({"from": sell, "to": buy, "fraction": frac, "move": move, "kind": kind,
                     "score_before": before, "score_after": P, "delta": P - before,
                     "why_sell": why_sell,
@@ -121,10 +124,15 @@ def propose(p: dict, weights: dict, parts: dict, cand_parts: dict, cand_cw: dict
         if not cands:
             break
         t, contrib = max(cands, key=lambda kv: kv[1])
-        need = (P - T) / (w[t] * (allp[t]["G"] - Gb))       # fraction that would bring P exactly to T
-        frac = min(1.0, max(0.25, -(-need // 0.25) * 0.25))  # rounded up to quarters, at least 25%
-        swap(t, frac, f"{t} adds {contrib:.1f} points ({contrib / P:.0%} of the score), mostly through "
-                      f"{_top_country(allp[t], names)}; the score is above the profile's tolerance of {T}.", "risk")
+
+        def after(frac):   # the score if `frac` of t moved into the best fund
+            x = dict(w)
+            x[t] -= x[t] * frac
+            x[ranked[0]] = x.get(ranked[0], 0) + w[t] * frac
+            return score_fn(x)
+        frac = next((q for q in (0.25, 0.5, 0.75) if after(q) <= T), 1.0)   # smallest quarter back to T
+        swap(t, frac, f"{t} has a holding risk of {allp[t]['G']:.0f} at {w[t]:.0%} of the portfolio, mostly through "
+                      f"{_top_country(allp[t], names)}; the score is above the profile's limit of {T:g}.", "risk")
     for s in out:
         s["score_start"] = P0
     return out

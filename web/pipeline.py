@@ -1,84 +1,91 @@
 """Run pipeline: what the server does after the user clicks Run analysis.
 
-Each step writes progress events to the run store (the page polls them) and its data to the cache.
-Assets and countries come from `web/live.py` (real agents) and fall back to the `_mock_*` reports when an item
-has no real source or an agent fails (`USE_REAL_AGENTS=0` forces the mocks). Event and data shapes are unchanged.
+Agents and data, in order (every step writes progress events the page polls):
+  1. Market data & filings    Yahoo prices + exposure agent (country revenue split, tiered fallback chain)
+  2. Company disclosures      filings agent (f_i) + filing-risk agent (Risk Factors), largest holdings    ┐
+  3. Scenarios                scenario agent, weekly                                                      │ parallel
+  4. Macro & sources          country risk agent (World Bank -> macro M_c) + source agent                 ┘
+  5. Country risk             geopolitical agent: GPR percentile g_c (code) + drivers; geopolitical claims agent
+  6. Portfolio risk           Cedric's two-stage formula (web/scoring.py) + risk agent explanation (numbers checked)
+  7. Recommendations          web/recommend.py (code) + remediation agent alternatives (validated, re-scored)
+LLM output is shown as context and never enters the score; numbers it writes are checked against the facts.
+No mock data: where a source is missing, the report says so. Every holding's country split is tagged with the
+tier that produced it (agents/exposure_agent.py: XBRL, filing text, last year's filing, sector / home-bias prior,
+returns-based), so the report shows how confident each split is.
 """
 import asyncio
-import math
-from datetime import date, timedelta
+import logging
+from concurrent.futures import ThreadPoolExecutor
+from datetime import date
 
-from tools import risk_math
-from web import live, mock, universe as U
-from web.store import cache, runs
+from agents import (country_risk_agent, exposure_agent, geopolitical_agent, geopolitical_claims_agent,
+                    remediation_agent, risk_agent)
+from pipelines import scenarios as sc
+from tools import gpr, market_data, risk_math
+from web import firms, market, recommend, scoring, universe as U
+from web.options import NAMES as _NAMES
+from web.store import runs
 
-DELAY = {"asset": 0.7, "country": 0.35, "step": 0.8}  # mock latency, makes the progress view visible
-
-
-# ---------- mock agents (replace with agents/*.run) ----------
-def _mock_asset_report(ticker: str, as_of: str) -> dict:
-    a = U.universe()[ticker]
-    is_fund = a["asset_class"] != "equity"
-    return {"ticker": ticker, "as_of": as_of, "country_weights": mock.exposure(ticker, a),
-            "firm_score": mock.FIRM_SCORE.get(ticker, 1.0),
-            "method": "ETF look-through" if a["asset_class"].startswith("etf") else
-                      ("No issuer country" if is_fund else "Annual filing, segment note"),
-            "sources": [mock.MOCK_SOURCE], "mock": True}
+log = logging.getLogger(__name__)
 
 
-def _mock_country_report(iso3: str, as_of: str) -> dict:
-    r, driver = mock.COUNTRY.get(iso3, mock.COUNTRY["Other"])
-    return {"country": iso3, "as_of": as_of, "R": r, "driver": driver, "sources": [mock.MOCK_SOURCE], "mock": True}
+class _Names(dict):
+    """Country names, plus region rows reported by filings (REGION:EUROPE -> 'Europe (region)')."""
+    def get(self, k, default=None):
+        if isinstance(k, str) and k.startswith("REGION:"):
+            return market.region_name(k)
+        return super().get(k, default)
 
 
-# ---------- helpers ----------
-def _ret_1y(ticker: str, as_of: str) -> float | None:
-    s = U._series()
-    if not s or ticker not in s[0]:
-        return None
-    d, c = s[0][ticker]
-    end = U.bisect_right(d, as_of)
-    start = U.bisect_right(d, (date.fromisoformat(as_of) - timedelta(days=365)).isoformat())
-    return c[end - 1] / c[start - 1] - 1 if end and start else None
+NAMES = _Names(_NAMES)
+
+def _asset_report(ticker: str, h: dict, as_of: str, weight: float | None = None) -> dict:
+    """The exposure agent's split; a failure falls back to the prior alone, never stops the run."""
+    try:
+        return exposure_agent.split(ticker, U.universe()[ticker], h, as_of, weight)
+    except Exception as e:
+        return {"ticker": ticker, "country_weights": {"Other": 1.0}, "estimated": True, "source": None, "quotes": [],
+                "tier": {"code": "none", "label": "no country", "lambda": 0.0, "prior": "none", "detail": str(e)[:120]},
+                "method": f"exposure agent failed: {type(e).__name__}: {str(e)[:120]}"}
 
 
-def _asset_risk(rep: dict, R: dict) -> float:
-    """G_i on 0-100 from tools.risk_math.asset_risk: exposure-weighted country risk, filing risk, market risk
-    (equal weights, renormalised over the terms that exist). Unknown revenue ('Other') takes the mean country risk."""
-    scored = {c: r / 100 for c, r in R.items() if c != "Other"}
-    filing = rep.get("filing", rep["firm_score"] / 5 if rep.get("mock", True) else None)
-    g, _, _ = risk_math.asset_risk(rep["country_weights"], scored, filing, rep.get("market"))
-    return 100 * g
+def _sec_problem(holdings: dict) -> str:
+    """Name the cause when SEC lookups fail, instead of a silent 0/N (e.g. SEC_IDENTITY without an email)."""
+    blocked = [h for h in holdings.values() if h.get("exposure_status") == "blocked"]
+    if blocked:
+        return f" · SEC refused {len(blocked)} requests (HTTP {blocked[0].get('http_status')}): check SEC_IDENTITY"
+    errs = [h.get("exposure_error") for h in holdings.values() if h.get("exposure_status") == "error"]
+    return f" · SEC lookups failed: {errs[0]}" if errs and errs[0] else ""
 
 
-def _level(score: float) -> str:
-    """Equal bands of the 0-100 score."""
-    return "low" if score < 25 else "moderate" if score < 50 else "elevated" if score < 75 else "high"
+def _ret_1y(series: dict | None) -> float | None:
+    return market.price_stats(series).get("ret") if series else None
 
 
 def scenario_impacts(sets: list[dict], weights: dict, assets: dict) -> list[dict]:
-    """Per scenario: share of portfolio revenue in affected countries, weighted by intensity."""
+    """What-if per scenario (not in the score): share of portfolio revenue in countries directly involved
+    (intensity >= risk_math.INVOLVED). No probability, no impact weight: both are LLM judgements."""
+    inv = risk_math.INVOLVED
     out = []
     for group in sets:
         for s in group["scenarios"]:
-            per = {t: w * sum(cw * s["countries"].get(c, 0) for c, cw in assets[t]["country_weights"].items())
+            per = {t: w * sum(cw for c, cw in assets[t]["country_weights"].items() if s["countries"].get(c, 0) >= inv)
                    for t, w in weights.items()}
             top = [t for t, v in sorted(per.items(), key=lambda kv: -kv[1]) if v > 0.005][:4]
             out.append({**s, "key": f"{group['scope']}/{s['id']}", "scope": group["scope"],
-                        "group": group["label"], "exposure": round(sum(per.values()), 4), "holdings": top})
+                        "group": group["label"], "exposure": round(sum(per.values()), 4), "holdings": top,
+                        "involved": sorted(c for c, k in s["countries"].items() if k >= inv)})
     return out
 
 
 def _scenario_sets(run_id: str, req: dict) -> list[dict]:
     """Scenario step: reuse this week's sets, otherwise run the scenario agent (saved to S3), then pick the
     set matching the analysis date. Runs in a worker thread because the agent is blocking."""
-    from pipelines.scenarios import run as sc
     ev = lambda **kw: runs.append_event(run_id, **kw)
     hook = lambda kind, status, id, label, detail="": ev(kind=kind, phase="scenarios", status=status,
                                                          id=id, label=label, detail=detail)
-    from concurrent.futures import ThreadPoolExecutor
     countries = [None] + ([req["scenario_country"]] if req.get("scenario_country") else [])
-    label_of = lambda c: "Global" if not c else f"Most dangerous for {mock.COUNTRY_NAMES.get(c, c)}"
+    label_of = lambda c: "Global" if not c else f"Most dangerous for {NAMES.get(c, c)}"
 
     def ensure(country):
         label = label_of(country)
@@ -119,142 +126,333 @@ async def run(run_id: str) -> None:
     try:
         runs.set(run_id, status="running")
 
-        # 1. Filings agent, one asset at a time (cache shared across runs)
-        ev(kind="phase", phase="assets", status="start", label="Company filings")
-        assets = {}
-        for t in weights:
-            ev(kind="asset", phase="assets", status="start", id=t, label=uni[t]["name"])
-            rep = cache.get("assets", f"{t}_{as_of}")
-            if rep is None:
-                await asyncio.sleep(DELAY["asset"])
-                rep = await live.asset_report(t, uni[t], as_of) or _mock_asset_report(t, as_of)
-                cache.put("assets", f"{t}_{as_of}", rep)
-            else:
-                await asyncio.sleep(0.15)
-            assets[t] = rep
+        # 1. Market data and filings: Yahoo prices + SEC country revenue per holding (parallel)
+        ev(kind="phase", phase="assets", status="start", label="Market data & filings")
+
+        # Each holding: fetch (Yahoo + SEC XBRL), then the exposure agent's split. Holdings with a filing table run
+        # first and join the peer library; the others follow, in parallel, with a bounded filing-text pass.
+
+        def finish(t, rep, h):
             top = sorted(((c, w) for c, w in rep["country_weights"].items() if c != "Other"), key=lambda x: -x[1])[:3]
             ev(kind="asset", phase="assets", status="done", id=t, label=uni[t]["name"],
-               detail=", ".join(f"{c} {w:.0%}" for c, w in top) or rep["method"])
-        ev(kind="phase", phase="assets", status="done")
+               detail=f"{rep.get('step', '?')} · {rep['tier']['label']} · " + (", ".join(f"{c} {w:.0%}" for c, w in top) or "no country") +
+                      ("" if h.get("prices") else " · no prices"))
 
-        # 2. Geopolitical agent, one country at a time, ordered by portfolio exposure
-        X = {}
+        def fetch_one(t):
+            ev(kind="asset", phase="assets", status="start", id=t, label=uni[t]["name"])
+            h = market.fetch_holding(t, uni[t], as_of)
+            if h.get("exposures") and not h.get("stale"):     # tier 1: no LLM, record it for the peers at once
+                rep = _asset_report(t, h, as_of, weights[t])
+                finish(t, rep, h)
+                return t, h, rep
+            return t, h, None
+
+        def split_one(t, h):
+            rep = _asset_report(t, h, as_of, weights[t])
+            finish(t, rep, h)
+            return t, rep
+
+        def assets_step():
+            with ThreadPoolExecutor(max_workers=6) as pool:
+                fetched = list(pool.map(fetch_one, list(weights)))
+                holdings = {t: h for t, h, _ in fetched}
+                assets = {t: rep for t, _, rep in fetched if rep}
+                assets.update(pool.map(lambda t: split_one(t, holdings[t]), [t for t in weights if t not in assets]))
+            return holdings, assets
+
+        holdings, assets = await asyncio.to_thread(assets_step)
+        X: dict[str, float] = {}
         for t, w in weights.items():
             for c, cw in assets[t]["country_weights"].items():
                 X[c] = X.get(c, 0) + w * cw
+        tiers = [a["tier"]["code"] for a in assets.values()]
+        ev(kind="phase", phase="assets", status="done", label="Market data & filings",
+           detail=" · ".join(f"{tiers.count(k)} {exposure_agent.LABEL[k]}" for k in exposure_agent.LABEL if k in tiers)
+                  + _sec_problem(holdings))
+        steps = [a.get("step") or "?" for a in assets.values()]
+        log.info("exposure steps: %s", {k: steps.count(k) for k in sorted(set(steps))})
+
+        # 2-4 in parallel: company disclosures (filings agents), scenarios, macro & sources
+        def firms_step():
+            ev(kind="phase", phase="firms", status="start", label="Company disclosures")
+
+            def fev(status, t, sec_t, out, cached):
+                name = uni[t]["name"]
+                if status == "start":
+                    ev(kind="asset", phase="firms", status="start", id=t, label=name)
+                elif out["status"] == "ok":
+                    ev(kind="asset", phase="firms", status="done", id=t, label=name,
+                       detail=f"{out['n_claims']} claims, {out['n_verified']} verified" + (" · cached" if cached else ""))
+                else:
+                    ev(kind="asset", phase="firms", status="done", id=t, label=name,
+                       detail="continues in background" if out["status"] == "pending" else "unavailable")
+            res = firms.analyse(weights, uni, as_of, fev, {t: h.get("exposure_status") for t, h in holdings.items()})
+            ev(kind="phase", phase="firms", status="done", label="Company disclosures",
+               detail=f"{sum(r['status'] == 'ok' for r in res.values())}/{len(res)} companies read" +
+                      (f" · {sum(r['status'] == 'pending' for r in res.values())} finishing in background"
+                       if any(r["status"] == "pending" for r in res.values()) else ""))
+            return res
+
+        def scen_step():
+            ev(kind="phase", phase="scenarios", status="start", label="Scenarios")
+            sets = _scenario_sets(run_id, req)
+            ev(kind="phase", phase="scenarios", status="done", label="Scenarios",
+               detail=" · ".join(f"{g['label']}: {len(g['scenarios'])} ({g['week']})" for g in sets) or "none available")
+            return sets
+
+        # Candidate funds' countries are needed too: recommendations are scored with the same inputs.
+        prof = req["profile"]
+        cands = recommend.candidates(prof, weights, uni)
+        cand_assets = {c: _asset_report(c, {}, as_of) for c in cands}
+        countries_needed = sorted({c for a in list(assets.values()) + list(cand_assets.values())
+                                   for c in a["country_weights"] if c != "Other"})
+
+        def macro_step():
+            ev(kind="phase", phase="macro", status="start", label="Macro & sources")
+            top = [c for c in sorted(X, key=lambda c: -X[c]) if c != "Other" and not c.startswith("REGION:")][:MACRO_TOP_N]
+            mev = lambda kind, status, id, label, detail="": ev(kind=kind, phase="macro", status=status, id=id,
+                                                                 label=label, detail=detail)
+            out, meta = country_risk_agent.assess(countries_needed, as_of, NAMES, mev, detail_for=top)
+            ev(kind="phase", phase="macro", status="done", label="Macro & sources",
+               detail=f"{sum(v['macro'] is not None for v in out.values())}/{len(out)} countries with World Bank data · "
+                      f"{sum(len(v['sources']) for v in out.values())} official sources reachable")
+            return {"countries": out, "meta": meta, "top": top}
+
+        firm_res, sets, macro = await asyncio.gather(
+            asyncio.to_thread(firms_step), asyncio.to_thread(scen_step), asyncio.to_thread(macro_step))
+        scen = scenario_impacts(sets, weights, {t: {"country_weights": a["country_weights"]} for t, a in assets.items()})
+
+        # 5. Country hazard (geopolitical agent): GPR percentile per country, candidate funds' countries included.
         ev(kind="phase", phase="countries", status="start", label="Country risk")
-        countries = {}
-        for c in sorted((c for c in X if c != "Other"), key=lambda c: -X[c]):
-            name = mock.COUNTRY_NAMES.get(c, c)
-            ev(kind="country", phase="countries", status="start", id=c, label=name)
-            rep = cache.get("countries", f"{c}_{as_of}")
-            if rep is None:
-                await asyncio.sleep(DELAY["country"])
-                rep = await live.country_report(c, as_of) or _mock_country_report(c, as_of)
-                cache.put("countries", f"{c}_{as_of}", rep)
-            countries[c] = rep
-            ev(kind="country", phase="countries", status="done", id=c, label=name, detail=f"risk {rep['R']}/100")
-        countries["Other"] = _mock_country_report("Other", as_of)
-        ev(kind="phase", phase="countries", status="done")
+        gev = lambda kind, status, id, label, detail="": ev(kind=kind, phase="countries", status=status, id=id,
+                                                             label=label, detail=detail)
+        countries, cmeta = await asyncio.to_thread(geopolitical_agent.assess, countries_needed, as_of, scen, {},
+                                                   NAMES, X, gev)
+        for c in sorted((c for c in X if c != "Other"), key=lambda c: -X[c])[:12]:
+            g = countries[c]["g"]
+            ev(kind="country", phase="countries", status="done", id=c, label=NAMES.get(c, c),
+               detail=f"GPR above {g:.0%} of its history · {countries[c]['method']}" if g is not None else "no data")
+        top_c = [c for c in sorted(X, key=lambda c: -X[c]) if countries.get(c, {}).get("gpr")][:CLAIMS_TOP_N]
+        gpr_claims = await asyncio.to_thread(_gpr_claims, top_c, as_of, gev)
+        ev(kind="phase", phase="countries", status="done", label="Country risk",
+           detail=f"{sum(v['g'] is not None for v in countries.values())}/{len(countries)} countries with GPR data · "
+                  f"{sum(len(c['claims']) for c in gpr_claims.values())} verified GPR claims")
 
-        # 3. Scenarios: weekly, shared by all users, generated only if missing
-        ev(kind="phase", phase="scenarios", status="start", label="Scenarios")
-        sets = await asyncio.to_thread(_scenario_sets, run_id, req)
-        ev(kind="phase", phase="scenarios", status="done", label="Scenarios",
-           detail=" · ".join(f"{g['label']}: {len(g['scenarios'])} ({g['week']})" for g in sets))
-
-        # 4. Risk (deterministic, tools/risk_math)
+        # 6. Portfolio risk: Cedric's two-stage formula on measured inputs (web/scoring.py), all in code
         ev(kind="phase", phase="risk", status="start", label="Portfolio risk")
-        await asyncio.sleep(DELAY["step"])
-        R = {c: r["R"] for c, r in countries.items()}
-        G = {t: _asset_risk(assets[t], R) for t in weights}
-        score = risk_math.portfolio_risk(weights, G)
-        ev(kind="phase", phase="risk", status="done", detail=f"{score:.0f}/100")
+        g = {c: v["g"] for c, v in countries.items() if v["g"] is not None}
+        M = {c: v["macro"]["score"] / 100 for c, v in macro["countries"].items() if v["macro"]}
+        f = {t: risk_math.firm_flags((firm_res.get(t) or {}).get("channels")) if (firm_res.get(t) or {}).get("status") == "ok"
+             else None for t in weights}
+        tol = scoring.tolerance(prof)
+        cw = {t: a["country_weights"] for t, a in {**assets, **cand_assets}.items()}
+        hold = {t: scoring.holding(cw[t], M, g, f[t], tol) for t in weights}
+        cand = {c: scoring.holding(cw[c], M, g, None, tol) for c in cands}
+        ctry = {c: scoring.country(c, M, g, tol) for c in set(X) - {"Other"}}
+        port = scoring.portfolio(weights, cw, M, g, f, tol)
+        score_fn = lambda w: scoring.portfolio(w, cw, M, g, f, tol)["objective"]
+        report = build_report(req, weights, assets, countries, X, hold, ctry, port, tol, M, f, scen, sets, firm_res, cmeta)
+        report["macro"], report["gpr_claims"] = macro, gpr_claims
+        ev(kind="phase", phase="risk", status="done", label="Portfolio risk",
+           detail=f"concern {port['personalized']:.0f}/100 · objective {port['objective']:.0f} · "
+                  + {"clear": "no immediate danger", "act": "action suggested"}[report["verdict"]["status"]])
 
-        # 5. Report: drivers, watchlist, what-ifs, scenarios
-        ev(kind="phase", phase="report", status="start", label="Report")
-        await asyncio.sleep(DELAY["step"])
-        result = build_report(req, weights, assets, countries, X, G, score, sets)
-        ev(kind="phase", phase="report", status="done")
-        runs.set(run_id, status="done", result=result)
+        # 7. Recommendations: deterministic, fitted to the profile; the risk agent only writes the summary
+        ev(kind="phase", phase="remediation", status="start", label="Recommendations")
+        parts = {t: _parts(hold[t], cw[t], ctry) for t in weights}
+        cand_parts = {c: _parts(cand[c], cw[c], ctry) for c in cands}
+        report["remediation"] = recommend.propose(prof, weights, parts, cand_parts,
+                                                  {c: a["country_weights"] for c, a in cand_assets.items()},
+                                                  report["checks"], report["verdict"], uni, NAMES, score_fn)
+        report["style"] = recommend.style(prof)
+        explain_facts = _explain_facts(req, report)
+
+        def explain():
+            ev(kind="llm", phase="risk", status="start", id="bedrock", label="Explaining the risk", detail="risk agent")
+            try:
+                return risk_agent.explain(explain_facts)
+            except Exception:
+                return None
+        sentences = await asyncio.to_thread(explain)
+        if sentences:   # the verdict section below carries the all-clear: no need to repeat it here
+            report["summary"], report["summary_by"] = sentences, "risk agent"
+        report["agent_swaps"] = None
+        if report["verdict"]["status"] == "act" and cand_parts:
+            rf = remediation_agent.facts(prof, weights, parts, cand_parts, port["objective"],
+                                         report["verdict"]["tolerance"], report["remediation"], uni)
+            ev(kind="llm", phase="remediation", status="start", id="bedrock", label="Alternative swaps", detail="remediation agent")
+            try:
+                report["agent_swaps"] = await asyncio.to_thread(remediation_agent.propose, rf, weights, parts, cand_parts,
+                                                                report["remediation"], score_fn)
+                detail = f"{len(report['agent_swaps'])} kept after validation"
+            except Exception as e:
+                detail = f"unavailable: {type(e).__name__}: {str(e)[:120]}"
+            ev(kind="llm", phase="remediation", status="done", id="bedrock", label="Alternative swaps", detail=detail)
+        if report["remediation"]:
+            used = sorted({w["to"] for w in report["remediation"]})
+            cand_prices = await asyncio.to_thread(_prices, used, as_of)
+            for w in report["remediation"]:
+                w["ret_from"] = _ret_1y((holdings.get(w["from"]) or {}).get("prices"))
+                w["ret_to"] = _ret_1y(cand_prices.get(w["to"]))
+        ev(kind="phase", phase="remediation", status="done", label="Recommendations",
+           detail=("nothing to change" if not report["remediation"] else f"{len(report['remediation'])} changes suggested")
+                  + (f" · {len(report['agent_swaps'])} agent alternatives" if report["agent_swaps"] else ""))
+        runs.set(run_id, status="done", result=report)
         ev(kind="run", status="done")
     except Exception as e:  # surface the error on the page instead of hanging
         runs.set(run_id, status="error", error=f"{type(e).__name__}: {e}")
         ev(kind="run", status="error", detail=str(e))
 
 
-def build_report(req, weights, assets, countries, X, G, score, sets) -> dict:
+MACRO_TOP_N = 8     # countries read by the country risk agent (largest revenue exposure)
+CLAIMS_TOP_N = 3    # countries read by the geopolitical claims agent
+
+
+def _gpr_claims(countries: list[str], as_of: str, emit) -> dict:
+    """Geopolitical claims agent on the most exposed countries, in parallel; failures are recorded per country."""
+
+    def one(c):
+        emit("llm", "start", c, f"GPR claims · {NAMES.get(c, c)}", "geopolitical claims agent")
+        try:
+            r = geopolitical_claims_agent.run(c, as_of, gpr.table())
+            out = {"claims": [x.model_dump() for x in r.claims] if r else [], "summary": r.summary if r else "", "error": None}
+        except Exception as e:
+            out = {"claims": [], "summary": "", "error": f"{type(e).__name__}: {str(e)[:120]}"}
+        emit("llm", "done", c, f"GPR claims · {NAMES.get(c, c)}", out["error"] or f"{len(out['claims'])} verified claims")
+        return c, out
+    with ThreadPoolExecutor(max_workers=3) as pool:
+        return dict(pool.map(one, countries))
+
+
+# ---------- what each agent extracts, and what the risk formula uses ----------
+# status: "used" = an input of the risk formula (web/scoring.py); "context" = shown, never scored (LLM judgement
+# or not yet validated); "candidate" = could enter the formula once measured mechanically.
+FORMULA_INPUTS = [
+    {"agent": "Market data & filings", "field": "Country revenue split w_ic (SEC tables, parsed by code)", "term": "X_c, weights of A1 and A2", "status": "used"},
+    {"agent": "Market data & filings", "field": "1-year return, volatility", "term": "profile volatility check", "status": "used"},
+    {"agent": "Filings agent", "field": "Risk channels with a verified verbatim quote (code-checked)", "term": "A3: f_i = channels / 8", "status": "used"},
+    {"agent": "Filings agent", "field": "Severity 0–5 and confidence per claim", "term": "—", "status": "context"},
+    {"agent": "Filing-risk agent", "field": "Every risk in the Risk Factors section, quotes verified; severity, confidence", "term": "—", "status": "context"},
+    {"agent": "Country risk agent", "field": "World Bank macro and banking indicators → macro score (tools/risk_calculator)", "term": "A1: M_c", "status": "used"},
+    {"agent": "Country risk", "field": "GPR index percentile vs. the country's own past months", "term": "A2: g_c", "status": "used"},
+    {"agent": "Country risk", "field": "Driver line (LLM, from the computed facts)", "term": "—", "status": "context"},
+    {"agent": "Geopolitical claims agent", "field": "Claims on the GPR history, quotes verified against the data", "term": "—", "status": "context"},
+    {"agent": "Scenarios", "field": "Countries directly involved, with verified quotes", "term": "what-if E_s (not in the score)", "status": "context"},
+    {"agent": "Scenarios", "field": "Likelihood, impact, intensity", "term": "—", "status": "context"},
+    {"agent": "Source agent", "field": "Reachable official sources per country", "term": "—", "status": "context"},
+    {"agent": "Remediation agent", "field": "Alternative swaps, validated and re-scored by code", "term": "—", "status": "context"},
+    {"agent": "Profile", "field": "Risk level → tolerance t; horizon, objective, ESG, exclusions → choice of fund", "term": "t, verdict, swaps", "status": "used"},
+]
+
+
+def _method(tol: float) -> dict:
+    p = scoring.P
+    return {"params": {k: getattr(p, k) for k in ("lam", "w_S", "w_G", "alpha", "eta", "tau", "kappa", "k", "a", "b", "mu")},
+            "t": tol, "rho": scoring.comfort(tol), "tolerance_map": scoring.RISK_LEVEL_TOLERANCE,
+            "involved": risk_math.INVOLVED, "inputs": FORMULA_INPUTS}
+
+
+def _parts(h: dict, cw: dict, ctry: dict) -> dict:
+    """Shape a holding's score for web/recommend.py: its risk, and which country drives it."""
+    return {"G": h["objective"], "countries": {c: w * ctry[c]["objective"] for c, w in cw.items() if c in ctry}}
+
+
+# ---------- helpers ----------
+def _prices(tickers: list[str], as_of: str) -> dict:
+    out = {}
+    for t in tickers:
+        try:
+            out[t] = market_data.get_price_history(t, min(as_of, date.today().isoformat()), 365)
+        except Exception:
+            out[t] = None
+    return out
+
+
+def _explain_facts(req: dict, r: dict) -> dict:
+    p = req["profile"]
+    return {"concern_score": round(r["score"]), "objective_risk": round(r["objective"]), "level": r["level"],
+            "verdict": r["verdict"]["status"], "comfort_level": r["verdict"]["tolerance"],
+            "inputs_0_to_100": {k: round(100 * v) for k, v in r["inputs"].items() if v is not None},
+            "profile": {k: p.get(k) for k in ("horizon_years", "risk_level", "objective_level", "esg_importance",
+                                               "excluded_themes", "interests", "notes")},
+            "top_holdings": [{"ticker": h["ticker"], "weight": round(h["weight"], 3), "holding_risk": round(h["R"])}
+                             for h in r["by_holding"][:4]],
+            "top_countries": [{"country": c["name"], "revenue_share": round(c["X"], 3), "country_risk": round(c["R"]),
+                               "gpr_percentile": round(100 * c["g"]) if c["g"] is not None else None}
+                              for c in r["by_country"][:4]],
+            "conflicts": [c["text"] for c in r["checks"]],
+            "largest_what_if": [{"name": s["name"], "revenue_in_involved_countries": round(s["exposure"], 2)}
+                                for s in sorted(r["scenarios"], key=lambda s: -s["exposure"])[:2]],
+            "changes_suggested": [f"{w['from']} -> {w['to']}" for w in r.get("remediation", [])]}
+
+
+def build_report(req, weights, assets, countries, X, hold, ctry, port, tol, M, f, scen, sets, firm_res, cmeta) -> dict:
     uni, as_of, prof = U.universe(), req["as_of"], req["profile"]
-    by_holding = sorted(({"ticker": t, "name": uni[t]["name"], "weight": w, "G": round(G[t], 1),
-                          "contribution": w * G[t] / score if score else 0,
-                          "method": assets[t]["method"]} for t, w in weights.items()),
-                        key=lambda r: -r["contribution"])
-    by_country = sorted(({"iso3": c, "name": mock.COUNTRY_NAMES.get(c, c), "X": round(x, 4),
-                          "R": countries[c]["R"], "driver": countries[c]["driver"],
+    wr = sum(w * hold[t]["objective"] for t, w in weights.items()) or 1.0
+    by_holding = sorted(({"ticker": t, "name": uni[t]["name"], "weight": w, "R": hold[t]["objective"],
+                          "concern": hold[t]["personalized"], "confidence": hold[t]["confidence"],
+                          "A": [hold[t][k] for k in ("A1", "A2", "A3")], "f": f[t],
+                          "share": w * hold[t]["objective"] / wr,
+                          "method": assets[t]["method"], "estimated": assets[t].get("estimated", True),
+                          "tier": assets[t].get("tier"), "channels": (firm_res.get(t) or {}).get("channels"),
+                          "source_url": (assets[t].get("source") or {}).get("url")} for t, w in weights.items()),
+                        key=lambda r: -r["weight"] * r["R"])
+    by_country = sorted(({"iso3": c, "name": NAMES.get(c, c), "X": round(x, 4), "g": countries[c]["g"],
+                          "M": M.get(c), "R": ctry[c]["objective"], "proxy": countries[c].get("proxy", False),
+                          "driver": countries[c]["driver"], "method": countries[c]["method"],
+                          "gpr": countries[c].get("gpr"), "scenarios": countries[c].get("scenarios", []),
                           "holdings": [t for t in weights if assets[t]["country_weights"].get(c, 0) >= 0.05]}
-                         for c, x in X.items() if c != "Other"), key=lambda r: -r["X"] * r["R"])
+                         for c, x in X.items() if c != "Other" and c in countries and c in ctry),
+                        key=lambda r: -r["X"] * r["R"])
+    unattributed = X.get("Other", 0.0)
 
-    # Watchlist: I_e = X * severity * likelihood / (1 + days/90)
-    watch = []
-    for e in mock.EVENTS:
-        x = weights.get(e["ticker"], 0) if e.get("ticker") else X.get(e.get("country"), 0)
-        if x <= 0:
+    # Signposts: early warnings of the scenarios with the most revenue in directly involved countries
+    seen, signposts = set(), []
+    for s in sorted(scen, key=lambda s: -s["exposure"]):
+        if s["name"] in seen or s["exposure"] < 0.01:
             continue
-        holdings = [e["ticker"]] if e.get("ticker") else \
-                   [t for t in weights if assets[t]["country_weights"].get(e["country"], 0) >= 0.05]
-        watch.append({**e, "date": (date.fromisoformat(as_of) + timedelta(days=e["days"])).isoformat(),
-                      "impact": x * e["severity"] * e["likelihood"] / (1 + e["days"] / 90),
-                      "holdings": holdings, "source": mock.MOCK_SOURCE})
-    watch = sorted(watch, key=lambda e: -e["impact"])[:5]
+        seen.add(s["name"])
+        for sp in s.get("signposts", [])[:2]:
+            signposts.append({"text": sp, "scenario": s["name"], "key": s["key"], "exposure": s["exposure"],
+                              "holdings": s["holdings"],
+                              "evidence": [e for e in s.get("evidence", []) if e.get("quote_verified")]})
+        if len(signposts) >= 5:
+            break
 
-    # What-ifs: move half of a top contributor into the lowest-risk allowed fund (simulation, not advice)
-    candidates = ["ZST.TO", "XBB.TO", "AGG", "XIU.TO", "ESGV", "SPY"]
-    if prof["objective"] == "growth":
-        candidates = ["XIU.TO", "ESGV", "SPY"]
-    if prof["esg_importance"] == "high":
-        candidates = [c for c in candidates if c != "SPY"]
-    candidates = [c for c in candidates if c not in prof["excluded_tickers"]]
-    R = {c: r["R"] for c, r in countries.items()}
-    alt_G = {c: _asset_risk(_mock_asset_report(c, as_of), R) for c in candidates}
-    whatifs = []
-    for row in [r for r in by_holding if not uni[r["ticker"]]["asset_class"].startswith("etf")][:2]:
-        t = row["ticker"]
-        alt = min((c for c in candidates if c != t), key=alt_G.get, default=None)
-        if not alt:
-            continue
-        move = weights[t] / 2
-        new = score - move * G[t] + move * alt_G[alt]
-        r_t, r_a = _ret_1y(t, as_of), _ret_1y(alt, as_of)
-        whatifs.append({"from": t, "to": alt, "move": move, "score_after": new, "delta": new - score,
-                        "ret_from": r_t, "ret_to": r_a})
+    checks = list(req.get("checks", []))
+    for c in prof.get("avoid_countries", []):
+        if X.get(c, 0) >= 0.005:
+            via = [t for t in weights if assets[t]["country_weights"].get(c, 0) >= 0.02]
+            checks.append({"ticker": c, "text": f"{X[c]:.1%} of portfolio revenue comes from {NAMES.get(c, c)}, "
+                                                f"a country the profile wants to limit" + (f" (through {', '.join(via)})." if via else ".")})
 
+    v = scoring.verdict(port["objective"], tol, len(checks))
+    lvl = scoring.level(port["personalized"])
+    summary = []   # [{title, text}]: short labelled points (the risk agent rewrites them when it can)
+    if by_country:
+        c = by_country[0]
+        summary.append({"title": "Where it comes from", "text":
+                        f"{c['name']}: {c['X']:.0%} of revenue" + (f", GPR above {c['g']:.0%} of its past months."
+                                                                   if c["g"] is not None else ".")})
     top = by_holding[0]
-    foreign = [c for c in by_country if c["iso3"] not in ("CAN", "USA")]
-    summary = [f"The portfolio's geopolitical risk score is {score:.0f} out of 100, which we classify as {_level(score)}."]
-    if top["contribution"] > top["weight"] * 1.2:
-        summary.append(f"{top['ticker']} is {top['weight']:.0%} of the portfolio but {top['contribution']:.0%} of the risk.")
-    if foreign:
-        f = foreign[0]
-        summary.append(f"The largest exposure outside North America is {f['name']}, at {f['X']:.0%} of "
-                       f"portfolio revenue, through {', '.join(f['holdings']) or 'several holdings'}.")
-    if prof["horizon_years"] <= 5 and prof["risk_tolerance"] in ("low", "low_moderate"):
-        summary.append(f"With a {prof['horizon_years']}-year horizon and a "
-                       f"{prof['risk_tolerance'].replace('_', ' to ')} risk tolerance, a shock on "
-                       f"{top['ticker']} would leave little time to recover.")
-    if prof["esg_importance"] == "high":
-        held = [t for t in weights if uni[t]["sector"] == "Energy"]
-        if held:
-            summary.append(f"{', '.join(held)} should be checked against the controversy exclusion; "
-                           "filings alone do not settle it.")
+    summary.append({"title": "Holdings that matter", "text":
+                    f"{top['ticker']}: {top['weight']:.0%} of the portfolio, {top['share']:.0%} of the weighted risk."})
+    summary.append({"title": "Fit with the profile", "text":
+                    f"Objective risk {port['objective']:.1f} against a comfort level of {v['tolerance']:g}."})
 
-    return {"as_of": as_of, "score": round(score, 1), "level": _level(score), "summary": summary,
-            "by_holding": by_holding, "by_country": by_country, "watchlist": watch, "whatifs": whatifs,
-            "checks": req.get("checks", []), "scenarios": scenario_impacts(sets, weights, assets),
+    return {"version": 3, "as_of": as_of, "score": port["personalized"], "objective": port["objective"],
+            "confidence": port["confidence"], "inputs": {"A1": port["A1"], "A2": port["A2"], "A3": port["A3"]},
+            "conf": port["conf"], "level": lvl, "summary": summary, "summary_by": "code", "verdict": v,
+            "by_holding": by_holding, "by_country": by_country, "unattributed": unattributed,
+            "signposts": signposts[:5], "checks": checks, "scenarios": scen,
             "scenario_sets": [{k: v for k, v in g.items() if k != "scenarios"} for g in sets],
             "highlight": req.get("scenario_country"),
             "assets": {t: {"weight": w, "country_weights": assets[t]["country_weights"]} for t, w in weights.items()},
-            "mock": any(r.get("mock", True) for r in assets.values())
-                    or any(r.get("mock", True) for c, r in countries.items() if c != "Other")}
+            "exposure_sources": {t: assets[t]["source"] for t in weights if assets[t].get("source")},
+            "firms": firm_res, "country_meta": cmeta, "method": _method(tol),
+            "exposure_status": {k: sum(1 for t in weights if (assets[t].get("status") or "") == k)
+                                for k in {assets[t].get("status") for t in weights} if k},
+            "n_estimated": sum(a["estimated"] for a in assets.values())}
 
 
 # ---------- regenerate / highlight from the report page ----------
@@ -265,7 +463,6 @@ def _set_entry(scope: str, label: str, s, as_of: str) -> dict:
 
 
 def _refresh_sync(run_id: str, country: str | None, force: bool) -> None:
-    from pipelines.scenarios import run as sc
     rec = runs.get(run_id)
     r, as_of = rec["result"], rec["request"]["as_of"]
     ev = lambda **kw: runs.append_event(run_id, **kw)
@@ -273,24 +470,18 @@ def _refresh_sync(run_id: str, country: str | None, force: bool) -> None:
                                                          id=id, label=label, detail=detail)
     current = {g["scope"]: g for g in r["scenario_sets"]}
     by_scope = {g["scope"]: [x for x in r["scenarios"] if x["scope"] == g["scope"]] for g in r["scenario_sets"]}
-    from concurrent.futures import ThreadPoolExecutor
     with ThreadPoolExecutor(max_workers=2) as pool:   # global and country sets in parallel
         f_g = pool.submit(sc.generate, None, True, hook) if (force or "global" not in current) else None
         f_c = pool.submit(sc.generate, country, force, hook) if country else None
         g, c = (f_g.result() if f_g else None), (f_c.result() if f_c else None)
     sets = [_set_entry("global", "Global", g, as_of) if g else {**current["global"], "scenarios": by_scope["global"]}]
     if c:
-        name = mock.COUNTRY_NAMES.get(country) or dict(_country_names()).get(country, country)
+        name = NAMES.get(country, country)
         sets.append(_set_entry(sc.scope_for(country), f"Most dangerous for {name}", c, as_of))
     weights = {t: a["weight"] for t, a in r["assets"].items()}
     r.update(scenarios=scenario_impacts(sets, weights, r["assets"]), highlight=country,
              scenario_sets=[{k: v for k, v in g.items() if k != "scenarios"} for g in sets])
     runs.set(run_id, result=r)
-
-
-def _country_names():
-    from web.personas import SCENARIO_COUNTRIES
-    return SCENARIO_COUNTRIES
 
 
 async def refresh_scenarios(run_id: str, country: str | None, force: bool) -> None:
@@ -327,9 +518,37 @@ def annexes(r: dict) -> dict:
                     a["cited_by"].append(s["name"])
     for url, i in inputs.items():
         add(url, i["name"], i.get("retrieved_at"))
-    add("https://finance.yahoo.com", "AlphaForge starter dataset: daily prices (Yahoo Finance) and USD/CAD (Bank of Canada)")
-    out = []
-    for n, a in enumerate(entries.values()):
-        letter = chr(65 + n) if n < 26 else f"A{chr(65 + n - 26)}"
-        out.append({**a, "letter": letter})
+    for h in r.get("by_holding", []):      # company filings behind disclosed exposures
+        src = (r.get("exposure_sources") or {}).get(h["ticker"])
+        if src and src.get("url"):
+            a = add(src["url"], src["name"], src.get("retrieved"))
+            a["cited_by"].append(f"Exposure of {h['ticker']}")
+    for m in (r.get("market") or {}).get("sources", []):
+        a = add(m["url"], m["name"], m.get("retrieved"))
+        for c in m["cited_by"]:
+            if c not in a["cited_by"]:
+                a["cited_by"].append(c)
+    for t, f in (r.get("firms") or {}).items():   # filings read by the filings agent
+        if f.get("filing") and f["filing"].get("url"):
+            a = add(f["filing"]["url"], f["filing"]["name"], f["filing"].get("retrieved"))
+            if f"Disclosures of {t}" not in a["cited_by"]:
+                a["cited_by"].append(f"Disclosures of {t}")
+    for t, f in (r.get("firms") or {}).items():   # filings read by the filing-risk agent
+        rf = f.get("risk_factors") or {}
+        if rf.get("status") == "ok" and rf.get("url"):
+            a = add(rf["url"], f"{t} {rf.get('form', '')} filed {rf.get('filing_date', '')}, {rf.get('section', '')}",
+                    rf.get("retrieved_at"))
+            if f"Risk factors of {t}" not in a["cited_by"]:
+                a["cited_by"].append(f"Risk factors of {t}")
+    for c, m in ((r.get("macro") or {}).get("countries") or {}).items():   # World Bank pages behind macro context
+        for i in m.get("indicators", {}).values():
+            a = add(i["url"], f"World Bank open data — {i['label']}")
+            if f"Macro: {NAMES.get(c, c)}" not in a["cited_by"]:
+                a["cited_by"].append(f"Macro: {NAMES.get(c, c)}")
+    g = (r.get("country_meta") or {}).get("gpr")
+    if g:
+        a = add(g["url"], g["name"], g.get("retrieved"))
+        a["cited_by"].append("Country risk")
+    letter = lambda n: (letter(n // 26 - 1) if n >= 26 else "") + chr(65 + n % 26)   # A..Z, AA, AB...
+    out = [{**a, "letter": letter(n)} for n, a in enumerate(entries.values())]
     return {"list": out, "by_url": {a["url"]: a["letter"] for a in out}}

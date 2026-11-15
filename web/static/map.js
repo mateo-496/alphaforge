@@ -22,10 +22,11 @@ window.initScenarioMap = async function (runId) {
   const path = d3.geoPath(projection);
 
   const css = getComputedStyle(document.documentElement);
-  const BASE = "#e2ddd1", STROKE = css.getPropertyValue("--paper").trim() || "#f6f4ee";
-  const ramp = d3.interpolateRgb("#efcfc4", "#7a1212");
+  const tok = n => css.getPropertyValue(n).trim();   // colours come from style.css :root only
+  const BASE = tok("--map-land"), STROKE = tok("--surface"), EDGE = tok("--border"), INK = tok("--ink-2");
+  const ramp = d3.piecewise(d3.interpolateRgb, ["--ramp-1", "--ramp-2", "--ramp-3", "--ramp-4", "--ramp-5"].map(tok));
 
-  svg.append("path").attr("d", path({ type: "Sphere" })).attr("fill", "none").attr("stroke", "#d8d4c9");
+  svg.append("path").attr("d", path({ type: "Sphere" })).attr("fill", "none").attr("stroke", EDGE);
   const countries = svg.append("g").selectAll("path").data(land).join("path")
     .attr("d", path).attr("fill", BASE).attr("stroke", STROKE).attr("stroke-width", 0.6)
     .attr("class", "country");
@@ -35,7 +36,7 @@ window.initScenarioMap = async function (runId) {
   function setHighlight(iso) {
     const f = land.filter(d => ISO[d.id] === iso);
     hlLayer.selectAll("path").data(f, d => d.id).join(
-      enter => enter.append("path").attr("d", path).attr("fill", "none").attr("stroke", "#161616")
+      enter => enter.append("path").attr("d", path).attr("fill", "none").attr("stroke", INK)
         .attr("stroke-width", 0).call(e => e.transition().duration(400).attr("stroke-width", 2)),
       update => update,
       exit => exit.remove());
@@ -53,7 +54,7 @@ window.initScenarioMap = async function (runId) {
     const I = intensity();
     countries.transition().duration(550).ease(d3.easeCubicOut)
       .attr("fill", d => { const v = I[ISO[d.id]]; return v ? ramp(v) : BASE; })
-      .attr("stroke", d => (I[ISO[d.id]] ? "#5a0d0d" : STROKE))
+      .attr("stroke", d => (I[ISO[d.id]] ? tok("--ramp-5") : STROKE))
       .attr("stroke-width", d => (I[ISO[d.id]] ? 0.8 : 0.6));
     impact(I);
   }

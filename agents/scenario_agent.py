@@ -6,17 +6,14 @@ Inputs are fetched by code (tools/scenario_sources.py), not by the model, so a r
 Usage (from repo root):
     python -m agents.scenario_agent                 # 12 global scenarios, printed
     python -m agents.scenario_agent --country TWN   # 5 most dangerous for Taiwan
-Normally called through pipelines.scenarios (merges with last week's set and saves to S3).
+Normally called through pipelines/scenarios.py (merges with last week's set and saves it).
 """
 import argparse
-import random
 import time
+from concurrent.futures import ThreadPoolExecutor
 from datetime import date, datetime, timezone
 
-from strands import Agent
-
-from agents.base import build_model
-from core import config
+from core import config, llm
 from core.schemas import DraftScenario, DraftScenarioSet, ScenarioEvidence, ScenarioSet
 from tools import scenario_sources as src
 
@@ -43,12 +40,6 @@ A scenario:
 
 Continuity: if last week's scenario ids are listed and a scenario is the same risk, REUSE its id exactly.
 Rank by likelihood x impact. Be brief everywhere: output length is what makes this slow."""
-
-
-def build_agent() -> Agent:
-    return Agent(model=build_model(max_tokens=6000, model_id=config.SCENARIO_MODEL_ID), system_prompt=SYSTEM_PROMPT,
-                 name="scenario_agent",
-                 tools=[], callback_handler=None)
 
 
 def _prompt(n: int, country: str | None, previous: ScenarioSet | None, sources: list[dict], gpr: dict | None) -> str:
@@ -109,28 +100,22 @@ def run(n: int = 12, country: str | None = None, previous: ScenarioSet | None = 
     """Returns (verified draft set, query record). The record is saved by the pipeline, always."""
     emit = on_event or (lambda *a, **k: None)
     week = week or f"{date.today().isocalendar()[0]}-W{date.today().isocalendar()[1]:02d}"
-    record = {"agent": AGENT, "model": config.SCENARIO_MODEL_ID, "mock": config.SCENARIO_USE_MOCK, "n": n,
+    record = {"agent": AGENT, "model": config.SCENARIO_MODEL_ID, "n": n,
               "country": country, "started_at": datetime.now(timezone.utc).isoformat(timespec="seconds")}
     t0 = time.time()
-    if config.SCENARIO_USE_MOCK:
-        draft, dropped, gpr, prompt = _mock(n, country, emit), [], None, ""
-        sources = [{"id": k, "name": v["name"], "url": v["url"], "retrieved_at": record["started_at"], "ok": True}
-                   for k, v in src.SOURCES.items()]
-    else:
-        from concurrent.futures import ThreadPoolExecutor
-        with ThreadPoolExecutor(max_workers=2) as pool:   # sources and GPR download at the same time
-            f_src, f_gpr = pool.submit(src.fetch_sources, week, emit), pool.submit(src.gpr_snapshot, week, emit)
-            sources, gpr = f_src.result(), f_gpr.result()
-        if not any(s["ok"] for s in sources):
-            raise RuntimeError("No source could be fetched: " + "; ".join(f"{s['id']}: {s['error']}" for s in sources))
-        prompt = _prompt(n, country, previous, sources, gpr)
-        t_llm = time.time()
-        emit("llm", "start", "bedrock", "Writing scenarios", f"one call · {len(prompt):,} characters in")
-        result = build_agent()(prompt, structured_output_model=DraftScenarioSet)
-        draft, dropped = _verify(result.structured_output, sources)
-        record["llm_seconds"] = round(time.time() - t_llm, 1)
-        emit("llm", "done", "bedrock", "Writing scenarios",
-             f"{len(draft.scenarios)} in {record['llm_seconds']:.0f} s" + (f", {len(dropped)} dropped (no verified quote)" if dropped else ""))
+    with ThreadPoolExecutor(max_workers=2) as pool:   # sources and GPR download at the same time
+        f_src, f_gpr = pool.submit(src.fetch_sources, week, emit), pool.submit(src.gpr_snapshot, week, emit)
+        sources, gpr = f_src.result(), f_gpr.result()
+    if not any(s["ok"] for s in sources):
+        raise RuntimeError("No source could be fetched: " + "; ".join(f"{s['id']}: {s['error']}" for s in sources))
+    prompt = _prompt(n, country, previous, sources, gpr)
+    t_llm = time.time()
+    emit("llm", "start", "bedrock", "Writing scenarios", f"one call · {len(prompt):,} characters in")
+    result = llm.ask(AGENT, SYSTEM_PROMPT, prompt, DraftScenarioSet, model_id=config.SCENARIO_MODEL_ID, max_tokens=16000)
+    draft, dropped = _verify(result, sources)
+    record["llm_seconds"] = round(time.time() - t_llm, 1)
+    emit("llm", "done", "bedrock", "Writing scenarios",
+         f"{len(draft.scenarios)} in {record['llm_seconds']:.0f} s" + (f", {len(dropped)} dropped (no verified quote)" if dropped else ""))
     record.update(seconds=round(time.time() - t0, 1), prompt=prompt, prompt_chars=len(prompt),
                   inputs=[{k: s[k] for k in ("id", "name", "url", "retrieved_at", "ok")} for s in sources]
                          + ([{"id": "gpr", "name": "Caldara & Iacoviello, Geopolitical Risk index", "url": src.GPR_URL,
@@ -138,31 +123,6 @@ def run(n: int = 12, country: str | None = None, previous: ScenarioSet | None = 
                   sources=[{k: v for k, v in s.items() if k != "text"} for s in sources],
                   gpr=gpr, dropped_unverified=dropped, draft=draft.model_dump())
     return draft, record
-
-
-# ---------- offline test mode (SCENARIO_USE_MOCK=1) ----------
-def _mock(n: int, country: str | None, emit) -> DraftScenarioSet:
-    from agents.mock_scenarios import MOCK
-    rng = random.Random(time.time_ns())
-    pool = [s for s in MOCK if not country or s["countries"].get(country, 0) >= 0.6] or MOCK
-    for sid, s in src.SOURCES.items():
-        emit("source", "start", sid, s["name"], s["url"])
-        time.sleep(0.3)
-        emit("source", "done", sid, s["name"], "test mode")
-    emit("llm", "start", "bedrock", "Writing scenarios", "test mode")
-    time.sleep(0.6)
-    out = []
-    for s in pool:
-        jitter = lambda v, lo, hi: round(min(hi, max(lo, v * (1 + rng.uniform(-0.2, 0.2)))), 3)
-        out.append(DraftScenario(**{**s, "likelihood": jitter(s["likelihood"], 0.01, 0.95),
-                                    "countries": {c: jitter(v, 0.05, 1) for c, v in s["countries"].items()},
-                                    "summary": clip(s["summary"]),
-                                    "evidence": [ScenarioEvidence(source_id=sid, url=src.SOURCES[sid]["url"],
-                                                                  quote=s["summary"][:120], quote_verified=True)
-                                                 for sid in rng.sample(list(src.SOURCES), rng.randint(1, 3))]}))
-    out.sort(key=lambda s: -s.likelihood * s.impact)
-    emit("llm", "done", "bedrock", "Writing scenarios", f"{min(n, len(out))} scenarios")
-    return DraftScenarioSet(scenarios=out[:n], notes="Test mode: no sources fetched.")
 
 
 if __name__ == "__main__":

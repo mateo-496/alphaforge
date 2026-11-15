@@ -1,7 +1,6 @@
 """The 10 sample portfolios (examples/portfolios.json), mapped onto the form's fields."""
 from functools import lru_cache
 
-from core.sample_portfolios import load
 from web import universe as U
 
 RISK = {"low": 1, "low-moderate": 2, "moderate": 3, "moderate-high": 4, "high": 5}
@@ -31,7 +30,7 @@ def _profile(p: dict) -> dict:
 @lru_cache
 def samples() -> dict[str, dict]:
     out = {}
-    for p in load()["portfolios"]:
+    for p in U.load()["portfolios"]:
         rows = []
         for h in p["holdings"]:
             t = U.normalise_ticker(h["ticker"]) or h["ticker"]

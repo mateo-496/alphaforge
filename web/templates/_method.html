@@ -1,20 +1,23 @@
-{% set k = r.method %}
+{% set k = r.method %}{% set p = k.params %}
   <section class="block coll collapsed" id="method">
-    <div class="block-head"><span class="block-no">09</span><h2><button type="button" class="block-toggle" aria-expanded="false">How the score is computed<i class="chev"></i></button></h2>
-      <p>Risk formula v2 (tools/risk_math). Every input is measured; no number written by a language model enters the score.</p></div>
+    <div class="block-head"><span class="block-no">07</span><h2><button type="button" class="block-toggle" aria-expanded="false">How the score is computed<i class="chev"></i></button></h2>
+      <p>Cedric's two-stage formula (tools/portfolio_score.py), fed only with measured inputs (web/scoring.py). No number written by a language model enters the score.</p></div>
     <div class="block-body">
       <ol class="formula mono small">
-        <li><span>Exposure</span><span>X<sub>c</sub> = Σ<sub>i</sub> w<sub>i</sub> w<sub>ic</sub> &nbsp;(SEC revenue tables, parsed by code)</span></li>
-        <li><span>Hazard</span><span>g<sub>c</sub> = share of the country's past months with a lower GPR index &nbsp;(0–1)</span></li>
-        <li><span>Market</span><span>m = mean z of OFR FSI, STLFSI4, VIX = {{ "%+.2f"|format(k.m) if k.m is not none else "n/a" }}; &nbsp;A = 1 + {{ k.gamma }} · clip(m, 0, 3) = ×{{ "%.2f"|format(k.A) }}</span></li>
-        <li><span>Filing flags</span><span>f<sub>i</sub> = channels with a verified quote / 8 &nbsp;(only when the filing was read)</span></li>
-        <li><span>Holding</span><span>G<sub>i</sub> = 100 · [a<sub>i</sub> · A · Σ<sub>c</sub> w<sub>ic</sub> g<sub>c</sub> + (1 − a<sub>i</sub>) · f<sub>i</sub>], &nbsp;a<sub>i</sub> = {{ 1 - k.lam }} if read, else 1</span></li>
-        <li><span>Portfolio</span><span>P = Σ<sub>i</sub> w<sub>i</sub> G<sub>i</sub> = <b>{{ "%.1f"|format(r.score) }}</b> &nbsp;(50 = a typical month, calm markets)</span></li>
-        <li><span>Verdict</span><span>clear if P ≤ tolerance (risk level 1→5: {{ k.tolerance.values()|join(", ") }}), A ≤ 1.15 and no broken profile limit</span></li>
-        <li><span>What-if</span><span>E<sub>s</sub> = Σ<sub>c</sub> X<sub>c</sub> · 1[country directly involved in s] &nbsp;(not in P)</span></li>
+        <li><span>Exposure</span><span>X<sub>c</sub> = Σ<sub>i</sub> w<sub>i</sub> w<sub>ic</sub> &nbsp;(country revenue split, tagged by tier)</span></li>
+        <li><span>A1 national</span><span>Σ<sub>c</sub> X<sub>c</sub> M<sub>c</sub> / Σ<sub>covered</sub> X<sub>c</sub>, &nbsp;M<sub>c</sub> = World Bank macro score / 100 = {{ "%.2f"|format(r.inputs.A1) if r.inputs.A1 is not none else "n/a" }} &nbsp;(c<sub>1</sub> = {{ r.conf[0] }})</span></li>
+        <li><span>A2 geopolitical</span><span>Σ<sub>c</sub> X<sub>c</sub> g<sub>c</sub> / Σ<sub>covered</sub> X<sub>c</sub>, &nbsp;g<sub>c</sub> = GPR percentile = {{ "%.2f"|format(r.inputs.A2) if r.inputs.A2 is not none else "n/a" }} &nbsp;(c<sub>2</sub> = {{ r.conf[1] }})</span></li>
+        <li><span>A3 disclosures</span><span>Σ<sub>i</sub> w<sub>i</sub> f<sub>i</sub> / Σ<sub>read</sub> w<sub>i</sub>, &nbsp;f<sub>i</sub> = verified channels / 8 = {{ "%.2f"|format(r.inputs.A3) if r.inputs.A3 is not none else "n/a" }} &nbsp;(c<sub>3</sub> = {{ r.conf[2] }})</span></li>
+        <li><span>Shrinkage</span><span>Ã<sub>k</sub> = c<sub>k</sub> A<sub>k</sub> + (1 − c<sub>k</sub>) μ, &nbsp;μ = {{ p.mu }} &nbsp;(c<sub>k</sub> = share of revenue or weight the input covers)</span></li>
+        <li><span>Convexity</span><span>f(x) = (e<sup>λx</sup> − 1) / (e<sup>λ</sup> − 1), &nbsp;λ = {{ p.lam }}</span></li>
+        <li><span>Blocks</span><span>F<sub>S</sub> = α f(Ã<sub>1</sub>) + (1 − α) f(Ã<sub>3</sub>), &nbsp;F<sub>G</sub> = f(Ã<sub>2</sub>), &nbsp;B = {{ p.w_S }} F<sub>S</sub> + {{ p.w_G }} F<sub>G</sub>, &nbsp;α = {{ p.alpha }}</span></li>
+        <li><span>Interaction</span><span>R<sub>0</sub> = B + η F<sub>S</sub> F<sub>G</sub> (1 − B), &nbsp;η = {{ p.eta }}</span></li>
+        <li><span>Red flag</span><span>h = (max(0, max<sub>k</sub> Ã<sub>k</sub> − τ) / (1 − τ))², &nbsp;R = R<sub>0</sub> + κ h (1 − R<sub>0</sub>) = <b>{{ "%.1f"|format(r.objective) }}</b>/100 &nbsp;(τ = {{ p.tau }}, κ = {{ p.kappa }})</span></li>
+        <li><span>Concern</span><span>ρ(t) = {{ p.a }} + {{ p.b }} t = {{ "%.2f"|format(k.rho) }} (t = {{ "%.2f"|format(k.t) }}); &nbsp;C = 100 [σ(k(R − ρ)) − σ(−kρ)] / [σ(k(1 − ρ)) − σ(−kρ)] = <b>{{ "%.1f"|format(r.score) }}</b>, &nbsp;k = {{ p.k }}</span></li>
+        <li><span>Verdict</span><span>clear if R ≤ 100 ρ(t) = {{ r.verdict.tolerance }} and no broken profile limit; t from risk level 1→5: low, low-moderate, moderate, moderate-high, high</span></li>
+        <li><span>What-if</span><span>E<sub>s</sub> = Σ<sub>c</sub> X<sub>c</sub> · 1[country directly involved in s] &nbsp;(not in the score)</span></li>
       </ol>
-      <p class="small">Because P is a sum, every point is traced: the points in the holdings and countries tables add up to the score
-        (country points {{ "%.1f"|format(r.score - r.firm_points) }} + filing flags {{ "%.1f"|format(r.firm_points) }}).</p>
+      <p class="small">The same formula scores each holding (its own w<sub>ic</sub> and f<sub>i</sub>) and each country (its own M<sub>c</sub> and g<sub>c</sub>, no company term), so the risk columns of the holdings and countries tables are comparable with the headline objective risk.</p>
 
       <h3 class="sub">What each agent extracts</h3>
       <table class="data inputs">

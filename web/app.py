@@ -1,27 +1,20 @@
-"""AlphaForge web: portfolio + investor profile input, validation and review.
+"""AlphaForge web: portfolio + investor profile form, run page and report.
 
-Run locally:  uvicorn web.app:app --reload   (from the repo root)
+Run locally:  uvicorn web.app:app --reload --port 8080   (from the repo root)
 """
 import asyncio
-import logging
-import os
-
-from dotenv import load_dotenv
-
-load_dotenv()   # .env next to the repo root: AWS, SEC_IDENTITY, model ids
-if "@" not in os.environ.get("SEC_IDENTITY", ""):
-    logging.getLogger("uvicorn.error").warning(
-        "SEC_IDENTITY has no email address: every SEC lookup will fail. Set it in .env, e.g. 'Your Name you@domain.com'.")
 import json
+import logging
 import math
 from pathlib import Path
 
-from fastapi import FastAPI, File, Form, Request, UploadFile
+from fastapi import FastAPI, File, Request, UploadFile
 from fastapi.responses import HTMLResponse, JSONResponse, PlainTextResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from pydantic import ValidationError
 
+from core import config
 from core.schemas import AnalysisRequest, Holding, InvestorProfile, Portfolio
 from web import pipeline, universe as U
 from web.store import runs
@@ -29,11 +22,31 @@ from web.samples import samples
 from web.personas import PERSONAS
 from web import options as O
 
+if "@" not in config.SEC_IDENTITY:
+    logging.getLogger("uvicorn.error").warning(
+        "SEC_IDENTITY has no email address: every SEC lookup will fail. Set it in .env, e.g. 'Your Name you@domain.com'.")
 HERE = Path(__file__).parent
 app = FastAPI(title="AlphaForge")
 app.mount("/static", StaticFiles(directory=HERE / "static"), name="static")
 tpl = Jinja2Templates(directory=HERE / "templates")
 tpl.env.globals["annexes"] = pipeline.annexes
+
+
+def short_driver(text: str | None, limit: int = 90) -> str:
+    """Driver as a short phrase: drop the percentile clause (it has its own column) and filler words."""
+    import re
+    t = re.sub(r"^[A-Z][\w .'-]{1,30}:\s+", "", text or "")   # "Japan: ..." (the country is in its own column)
+    t = re.sub(r"^\s*(own|global) index at \d+\w* percentile[^;:,.]*[;:,.]\s*", "", t, flags=re.I)
+    t = re.sub(r"^(a (low|high) reading[;,]\s*)", "", t, flags=re.I)
+    if re.match(r"no scenarios? (directly )?involves? (it|them)", t, flags=re.I):
+        return "No scenario involves it"
+    t = re.sub(r"\b(driven by |exposed through |involved in |involvement in |directly )(the )?", "", t, flags=re.I)
+    t = re.sub(r"(?<!\bno)\s+scenarios?\b", "", t, flags=re.I).strip(" ;,.")
+    t = t[:1].upper() + t[1:]
+    return t if len(t) <= limit else t[:limit].rsplit(" ", 1)[0].rstrip(",;") + "…"
+
+
+tpl.env.globals["short_driver"] = short_driver
 _tasks: set = set()
 COUNTRY_NUM = {k: v["num"] for k, v in json.loads((HERE / "countries.json").read_text()).items() if v["num"]}
 
@@ -47,7 +60,7 @@ def _ctx(**kw) -> dict:
             "samples": samples(), "scenario_countries": O.COUNTRIES, "risk_labels": RISK_LABELS,
             "objective_labels": OBJECTIVE_LABELS, "exclusion_options": O.exclusion_options(U.universe()),
             "country_options": O.country_options(), "interest_options": O.interest_options(),
-            "window": U.WINDOW, "prices_ok": U.prices_available(), **kw}
+            "window": U.WINDOW, "prices_ok": U.prices_available(), "names": pipeline.NAMES, **kw}
 
 
 def _holdings(request: Request, mode: str, rows: list[dict], warnings: list[str]):
@@ -262,7 +275,7 @@ def run_result(request: Request, run_id: str):
     return tpl.TemplateResponse(request, "_result.html", _ctx(run=rec, req=rec["request"], r=rec["result"]))
 
 
-REPORT_VERSION = 2   # bump when the report's shape changes (v2: verdict, points, profile-fitted recommendations)
+REPORT_VERSION = 3   # bump when the report's shape changes (v3: Cedric's formula, exposure tiers)
 STALE_NOTE = ('<p class="notice">This report was produced by an earlier version of AlphaForge and cannot be shown '
               'with the current page. <a href="/">Run the analysis again</a>.</p>')
 
@@ -311,12 +324,3 @@ def run_scenarios_section(request: Request, run_id: str):
 def run_annexes(request: Request, run_id: str):
     rec = runs.get(run_id)
     return tpl.TemplateResponse(request, "_annexes.html", _ctx(run=rec, req=rec["request"], r=rec["result"]))
-
-
-@app.post("/api/request")
-async def api_request(request: Request):
-    """Same validation as /review, returns the AnalysisRequest JSON (for the orchestrator)."""
-    req, errors, notes = build_request(await request.form())
-    if errors:
-        return JSONResponse({"errors": errors, "notes": notes}, status_code=422)
-    return {"request": req.model_dump(), "notes": notes, "checks": profile_checks(req)}

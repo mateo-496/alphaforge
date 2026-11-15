@@ -1,10 +1,13 @@
 [project]
 name = "alphaforge"
-version = "0.1.0"
+version = "0.2.0"
 requires-python = ">=3.12"
 
 [tool.setuptools.packages.find]
-include = ["core*", "tools*", "agents*", "orchestrator*"]
+include = ["core*", "tools*", "agents*", "pipelines*", "web*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
 
 [build-system]
 requires = ["setuptools>=68"]

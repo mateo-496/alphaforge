@@ -1,12 +1,13 @@
-"""Data contracts shared by agents, orchestrator, API and website."""
+"""Data contracts shared by agents, tools and the website."""
+from datetime import date
 from typing import Literal, Optional
 
-from pydantic import BaseModel, Field, computed_field
+from pydantic import BaseModel, Field, computed_field, model_validator
 
 # Fixed channel taxonomy shared by ALL data-retrieving agents.
 Channel = Literal["trade_tariffs", "export_controls", "sanctions", "conflict_exposure",
                   "supply_chain", "regulatory", "fx_capital_controls", "financial_stress",
-                  "filing_risk"]
+                  "filing_risk"]   # filing_risk: legacy claims scored by tools/risk_math.filing_risk
 
 
 # ---------- Common envelope for every data-retrieving agent ----------
@@ -75,23 +76,6 @@ class Event(BaseModel):
     ticker: Optional[str] = Field(None, description="Set for firm-specific events")
 
 
-class Indicators(BaseModel):
-    gpr: Optional[float] = None
-    gpr_z: Optional[float] = None
-    epu: Optional[float] = None
-    vol_index: Optional[float] = None
-    stress: Optional[float] = None
-
-
-class CountryReport(BaseModel):
-    country: str
-    as_of: str
-    indicators: Indicators
-    claims: list[Claim]
-    events: list[Event]
-    R_c: float = Field(0.0, description="Computed in code (tools.risk_math.country_risk), never by the LLM")
-
-
 class MarketStats(BaseModel):
     beta_m: Optional[float] = None
     beta_gpr: Optional[float] = None
@@ -109,8 +93,27 @@ class AssetReport(BaseModel):
     events: list[Event]
 
 
-# ---------- Request inputs (web form -> orchestrator) ----------
+# ---------- Market series (tools/market_data, tools/market_stress) ----------
+class Observation(BaseModel):
+    date: date
+    value: float = Field(allow_inf_nan=False)
 
+
+class MarketSeries(BaseModel):
+    name: str
+    unit: str
+    observations: list[Observation] = Field(min_length=2)
+    source: Source
+
+    @model_validator(mode="after")
+    def ordered_observations(self):
+        dates = [o.date for o in self.observations]
+        if dates != sorted(set(dates)):
+            raise ValueError("Observations must have unique dates in ascending order")
+        return self
+
+
+# ---------- Request inputs (web form -> pipeline) ----------
 
 class Holding(BaseModel):
     ticker: str = Field(description="Ticker from the 31-asset starter universe, e.g. 'NVDA', 'RY.TO'")
@@ -206,51 +209,5 @@ class ScenarioSet(BaseModel):
     computed_at: str
     alpha: float = Field(description="EMA weight given to the newest run")
     query_keys: list[str] = Field(default_factory=list, description="Storage keys of the raw queries merged in")
-    mock: bool = False
     inputs: list[dict] = Field(default_factory=list, description="Sources read for this set: id, name, url, retrieved_at, ok")
     scenarios: list[Scenario]
-
-
-# ---------- Orchestrator chain schemas ----------
-
-class Step(BaseModel):
-    """One recorded agent invocation inside a ChainResult."""
-    agent: str
-    input: dict
-    output: dict
-    ms: float = 0.0
-
-
-class PortfolioRisk(BaseModel):
-    """Deterministic portfolio risk output from risk_agent.run()."""
-    score: float = Field(description="Final personalized risk score 0-100")
-    objective_score: float = Field(0.0, description="Objective risk 0-100, independent of user tolerance")
-    personalized_score: float = Field(0.0, description="Personalized concern 0-100")
-    confidence: float = Field(1.0, ge=0.0, le=1.0, description="Aggregate confidence 0-1")
-    by_ticker: dict[str, float] = Field(default_factory=dict,
-                                        description="Firm risk score 0-100 per ticker")
-    top_drivers: list[str] = Field(default_factory=list)
-    explanation: str = ""
-    components: dict[str, float] = Field(default_factory=dict,
-                                         description="A1/A2/A3/A4 component breakdown (0-100 scale)")
-
-
-class Trade(BaseModel):
-    """A single remediation trade recommendation."""
-    ticker: str
-    action: Literal["buy", "sell", "hold"] = "sell"
-    delta_weight: float = Field(0.0, description="Signed weight change, e.g. -0.05")
-    rationale: str = ""
-
-
-class RemediationPlan(BaseModel):
-    """Output of the remediation agent."""
-    trades: list[Trade] = Field(default_factory=list)
-    expected_risk_after: float = Field(0.0, description="Estimated portfolio risk after trades 0-100")
-    summary: str = ""
-
-
-class ChainResult(BaseModel):
-    """Full end-to-end analysis result."""
-    steps: list[Step]
-    final: RemediationPlan
