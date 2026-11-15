@@ -1,6 +1,7 @@
 """Filings tools: SEC annual filings via edgartools, point-in-time.
 Plain Strands @tool functions: used by agents locally, wrapped by Lambda for AgentCore Gateway later."""
 import re
+from datetime import date, datetime, timezone
 from functools import lru_cache
 
 from edgar import Company, set_identity
@@ -104,8 +105,77 @@ def search_filing(ticker: str, as_of: str, pattern: str, max_matches: int = 15) 
 
 def quote_is_verified(ticker: str, quote: str) -> bool:
     """Exact-substring check (whitespace/quotes normalized) against retrieved text."""
+    return any(quote_is_in_text(quote, text) for text in RETRIEVED_TEXT.get(ticker.upper(), []))
+
+
+def quote_is_in_text(quote: str, text: str) -> bool:
     def norm(s: str) -> str:
         s = s.replace("’", "'").replace("“", '"').replace("”", '"')
         return re.sub(r"\s+", " ", s).strip().lower()
     q = norm(quote)
-    return bool(q) and any(q in norm(t) for t in RETRIEVED_TEXT.get(ticker.upper(), []))
+    return bool(q) and q in norm(text)
+
+
+def _risk_chunks(text: str, size: int = 12000, overlap: int = 500) -> list[str]:
+    chunks = []
+    start = 0
+    while start < len(text):
+        end = min(start + size, len(text))
+        if end < len(text):
+            boundary = text.rfind(" ", start, end)
+            if boundary > start + overlap:
+                end = boundary
+        chunks.append(text[start:end])
+        if end == len(text):
+            break
+        start = end - overlap
+    return chunks
+
+
+def get_filing_risk_section(ticker: str, as_of: str) -> dict:
+    """Get the annual filing's risk section, or request manual review if ambiguous."""
+    date.fromisoformat(as_of)
+    if not SEC_IDENTITY or "@" not in SEC_IDENTITY or "example.com" in SEC_IDENTITY.lower():
+        raise ValueError("SEC_IDENTITY must contain an application name and real contact email")
+    ticker = ticker.upper()
+    filing = _annual_filing(ticker, as_of)
+    report = filing.obj()
+    meta = _meta(filing)
+    section = "Item 1A" if filing.form == "10-K" else "Item 3.D" if filing.form == "20-F" else "Risk Factors"
+    url = meta["url"]
+    text = report.risk_factors
+    reason = None
+    if not isinstance(text, str) or not text.strip():
+        reason = "The Risk Factors section could not be located."
+    elif filing.form == "10-K":
+        if not any(item in report.items for item in ("Item 1B", "Item 1C", "Item 2")):
+            reason = "The end of the 10-K Risk Factors section could not be verified."
+    elif filing.form == "20-F":
+        if "Item 4" not in report.items:
+            reason = "The end of the 20-F Risk Factors section could not be verified."
+        else:
+            heading = re.search(
+                r"(?im)^[ \t]*(?:(?:item[ \t]+)?3[.\s]*d[.:\s-]*|d[.:\s-]+)?"
+                r"risk[ \t]+factors[ \t]*[.:]?[ \t]*$", text)
+            if heading is None:
+                reason = "The 20-F Risk Factors heading could not be located."
+            else:
+                text = text[heading.start():]
+    elif filing.form == "40-F":
+        if re.search(r"\b(?:incorporat\w*\s+by\s+reference|refer(?:s|red)?\s+to)\b", text, re.I):
+            reason = "The 40-F risk section refers to other documents and requires manual review."
+        elif report.aif_attachment is not None:
+            url = report.aif_attachment.url
+    else:
+        raise ValueError(f"Unsupported filing form: {filing.form}")
+    base = {"ticker": ticker, "form": filing.form, "filing_date": meta["filing_date"],
+            "section": section, "url": url}
+    if reason:
+        return {**base, "status": "manual_review", "reason": reason, "chunks": []}
+    return {**base, "status": "available", "reason": None, "chunks": _risk_chunks(text),
+            "retrieved_at": datetime.now(timezone.utc).isoformat(timespec="seconds")}
+
+
+def verify_filing_risk_quotes(text: str, quotes: list[str]) -> dict:
+    """Verify quotations against the exact section excerpt supplied to the model."""
+    return {"verified": [quote_is_in_text(quote, text) for quote in quotes]}

@@ -5,7 +5,8 @@ from pydantic import BaseModel, Field, computed_field
 
 # Fixed channel taxonomy shared by ALL data-retrieving agents.
 Channel = Literal["trade_tariffs", "export_controls", "sanctions", "conflict_exposure",
-                  "supply_chain", "regulatory", "fx_capital_controls", "financial_stress"]
+                  "supply_chain", "regulatory", "fx_capital_controls", "financial_stress",
+                  "filing_risk"]
 
 
 # ---------- Common envelope for every data-retrieving agent ----------

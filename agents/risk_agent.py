@@ -1,58 +1,62 @@
-"""Risk agent: explains the computed portfolio risk in a few sentences.
-
-Numbers come from code (tools/risk_math, web/pipeline). The model only writes prose around them, and code
-rejects any sentence containing a number that is not in the supplied facts (no invented figures)."""
+"""Final portfolio risk: gathers measured inputs, then tools.portfolio_risk computes the score (no LLM numbers)."""
+import argparse
 import json
-import re
+from datetime import date
+from pathlib import Path
 
-from pydantic import BaseModel, Field
-from strands import Agent
-
-from agents.base import build_model
-
-SYSTEM_PROMPT = """You are the Risk analyst of AlphaForge. Explain a portfolio's geopolitical risk to the investor
-described in the facts, in 3 to 4 short sentences (max 260 characters each).
-Say what drives the score, which holdings and countries matter most, and how it fits the investor's horizon,
-risk tolerance and stated preferences. Challenge the investor where the portfolio conflicts with the profile.
-Use ONLY numbers that appear in the facts, written the same way (e.g. 25%, 43). No advice to buy or sell."""
+from agents.country_risk_agent import analyze_country_scored
+from core.portfolio_risk import PortfolioRiskReport
+from core.schemas import AgentOutput, Claim
+from tools import market_data, market_inputs, portfolio_csv, worldbank
+from tools.country_risk_inputs import country_risk_score
+from tools.portfolio_risk import compute_portfolio_risk
 
 
-class Explanation(BaseModel):
-    sentences: list[str] = Field(description="3-4 sentences, max 260 characters each")
+def country_score(iso2: str, as_of: str, use_agent: bool = True) -> dict:
+    """R_c on [0, 1] with its missing inputs. The country risk agent (World Bank macro claims, GPR, stress) is used
+    when the country is known to the World Bank; otherwise the measured inputs alone (e.g. Taiwan)."""
+    if use_agent:
+        try:
+            info = worldbank.country_info(iso2)
+            if info:
+                _, measured = analyze_country_scored(info["name"])
+                if measured:
+                    return {"score": measured["score"], "missing_inputs": measured["missing_inputs"]}
+        except Exception:
+            pass
+    result = country_risk_score(iso2, as_of)
+    return {"score": result["score"], "missing_inputs": result["missing_inputs"]}
 
 
-NUM = re.compile(r"(?<![\w.])[-+]?\d+(?:\.\d+)?%?")
+def run(csv_text: str, filing_reports: list[AgentOutput] | None = None,
+        scenario: tuple[dict[str, float], float] | None = None, use_country_agent: bool = True) -> PortfolioRiskReport:
+    """filing_reports: per-ticker outputs of the filing-risk agent (omit to leave the filing term missing)."""
+    as_of = date.today().isoformat()
+    weights = {h["ticker"]: float(h["weight"]) for h in portfolio_csv.convert_portfolio_csv(csv_text)["holdings"]}
+    exposures, market = {}, {}
+    for ticker in weights:
+        found = market_data.get_country_exposures(ticker)
+        exposures[ticker] = {e["country"]: e["revenue_share"] for e in found["exposures"]}
+        try:
+            market[ticker] = market_inputs.vol_and_beta(ticker, as_of)
+        except Exception:
+            market[ticker] = {}
+    country_scores = {}
+    for country in sorted({c for shares in exposures.values() for c in shares}):
+        country_scores[country] = country_score(country, as_of, use_country_agent)
+    claims: dict[str, list[Claim]] = {}
+    for report in filing_reports or []:
+        claims.setdefault(report.entity.ticker, []).extend(report.claims)
+    return compute_portfolio_risk(as_of, weights, exposures, country_scores, claims, market, scenario=scenario)
 
 
-def _allowed(facts) -> set[str]:
-    out = set()
-
-    def walk(x):
-        if isinstance(x, bool):
-            return
-        if isinstance(x, (int, float)):
-            for v in (x, x * 100):
-                for f in (f"{v:.0f}", f"{v:.1f}", f"{v:g}"):
-                    out.update({f, f + "%", f.lstrip("-"), f.lstrip("-") + "%"})
-        elif isinstance(x, str):
-            out.update(NUM.findall(x))
-            out.update(n.rstrip("%") for n in NUM.findall(x))
-        elif isinstance(x, dict):
-            [walk(v) for v in x.values()]
-        elif isinstance(x, list):
-            [walk(v) for v in x]
-    walk(facts)
-    return out
-
-
-def check(sentences: list[str], facts: dict) -> list[str]:
-    """Keep sentences whose numbers all appear in the facts."""
-    ok = _allowed(facts)
-    return [s for s in sentences if all(n.lstrip("+") in ok or n.lstrip("+").rstrip("%") in ok for n in NUM.findall(s))]
-
-
-def explain(facts: dict) -> list[str]:
-    agent = Agent(model=build_model(max_tokens=1200), system_prompt=SYSTEM_PROMPT, name="risk_agent",
-                  callback_handler=None)
-    res = agent(json.dumps(facts), structured_output_model=Explanation).structured_output
-    return [s.strip() for s in check(res.sentences, facts) if s.strip()][:4]
+if __name__ == "__main__":
+    parser = argparse.ArgumentParser(description="Compute the final risk of a CSV portfolio")
+    parser.add_argument("portfolio", type=Path)
+    parser.add_argument("--filings", type=Path, help="JSON output of agents.filing_risk_agent")
+    args = parser.parse_args()
+    reports = None
+    if args.filings:
+        data = json.loads(args.filings.read_text(encoding="utf-8"))
+        reports = [AgentOutput.model_validate(r) for r in data["reports"]]
+    print(run(args.portfolio.read_text(encoding="utf-8-sig"), reports).model_dump_json(indent=2))

@@ -50,7 +50,7 @@ def list_keys(prefix: str) -> list[str]:
     root = LOCAL_ROOT / prefix
     if not root.exists():
         return []
-    return sorted(str(p.relative_to(LOCAL_ROOT)) for p in root.rglob("*") if p.is_file())
+    return sorted(p.relative_to(LOCAL_ROOT).as_posix() for p in root.rglob("*") if p.is_file())
 
 
 def write_json(key: str, obj) -> None:

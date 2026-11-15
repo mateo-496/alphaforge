@@ -9,35 +9,74 @@ def test_portfolio_risk():
     assert portfolio_risk({"A": 0.5, "B": 0.5}, {"A": 80, "B": 20}) == 50
 
 
-def test_v2_is_additive_and_mechanical():
-    from tools.risk_math import firm_flags, holding_score, percentile, portfolio_score, scenario_exposure
-    assert percentile(5, [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]) == .5
-    g = {"USA": .5, "TWN": .9, "Other": .7}
-    a = holding_score({"USA": .6, "TWN": .4}, g, 1.0, None)          # 100 * (.6*.5 + .4*.9) = 66
-    b = holding_score({"USA": 1.0}, g, 1.3, firm_flags(["sanctions", "sanctions", "tariffs"]))  # f = 2/8
-    assert abs(a["G"] - 66) < 1e-9 and abs(b["G"] - (80 * 1.3 * .5 + 20 * .25)) < 1e-9
-    ps = portfolio_score({"A": .5, "B": .5}, {"A": a, "B": b})
-    assert abs(sum(ps["by_holding"].values()) - ps["P"]) < 1e-9
-    assert abs(sum(ps["by_country"].values()) + ps["firm"] - ps["P"]) < 1e-9
-    assert firm_flags(None) is None
-    s = {"countries": {"TWN": 1.0, "USA": .3}}
-    assert scenario_exposure(s, {"TWN": .2, "USA": .5}) == .2         # USA below the involvement threshold
+import pytest
+
+from core.schemas import Claim
+from tools import risk_math as rm
 
 
-def test_market_amplifier():
-    from tools.risk_math import amplifier, market_stress_level
-    assert market_stress_level({"OFR_FSI": 2.0, "STLFSI4": 1.0, "VIXCLS": None}) == 1.5
-    assert amplifier(-1.0) == 1.0 and amplifier(None) == 1.0 and abs(amplifier(10) - 1.45) < 1e-9
+def claim(score, confidence):
+    return Claim(id="a:T:001", channel="filing_risk", statement="s", score=score, confidence=confidence)
 
 
-def test_verdict_by_profile():
-    from tools.risk_math import verdict
-    assert verdict(58, 3, 1.0, 0)["clear"] and not verdict(58, 2, 1.0, 0)["clear"]   # tolerance 60 vs 55
-    assert not verdict(40, 5, 1.3, 0)["clear"] and not verdict(40, 5, 1.0, 1)["clear"]
+def test_percentile_rank_is_bounded_and_none_without_history():
+    assert rm.percentile_rank(5, [1, 2, 3, 4]) == 1.0
+    assert rm.percentile_rank(0, [1, 2, 3, 4]) == 0.0
+    assert rm.percentile_rank(2, [1, 2, 3, 4]) == 0.5
+    assert rm.percentile_rank(1, []) is None
 
 
-def test_z_features():
-    from tools.risk_math import level_z, move_z
-    assert level_z([1.0] * 40) is None and level_z([1.0] * 10) is None
-    assert level_z([0.0] * 39 + [1.0]) > 5
-    assert move_z(list(range(60))) is None
+def test_claim_quality_is_confidence_weighted():
+    assert rm.claim_quality([claim(5, 1.0), claim(0, 1.0)]) == 0.5
+    assert rm.claim_quality([claim(5, 0.9), claim(0, 0.1)]) == pytest.approx(0.9)
+    assert rm.claim_quality([]) is None
+
+
+def test_country_risk_renormalises_missing_components_instead_of_counting_zero():
+    score, contrib = rm.country_risk(0.8, None, 0.4, [])
+    assert score == pytest.approx(0.6)
+    assert set(contrib) == {"gpr", "vol"} and sum(contrib.values()) == pytest.approx(score)
+    with pytest.raises(ValueError):
+        rm.country_risk(None, None, None, [])
+    with pytest.raises(ValueError):
+        rm.country_risk(1.2, 0.5, 0.5, [])
+
+
+def test_asset_risk_unknown_share_uses_mean_country_risk_not_zero():
+    score, contrib, per_country = rm.asset_risk({"CN": 0.5}, {"CN": 0.8, "US": 0.2},
+                                                weights={"exposure": 1, "filing": 0, "market": 0})
+    assert per_country == {"CN": pytest.approx(0.4), "Other": pytest.approx(0.25)}  # mean R = 0.5
+    assert score == pytest.approx(0.65)
+
+
+def test_asset_risk_blends_filing_and_market_and_contributions_sum_to_score():
+    score, contrib, _ = rm.asset_risk({"CN": 1.0}, {"CN": 0.6}, filing=0.3, market=0.9)
+    assert score == pytest.approx((0.6 + 0.3 + 0.9) / 3)
+    assert sum(contrib.values()) == pytest.approx(score)
+    score, contrib, _ = rm.asset_risk({"CN": 1.0}, {"CN": 0.6}, filing=0.3)
+    assert score == pytest.approx(0.45) and set(contrib) == {"exposure", "filing"}
+
+
+def test_portfolio_scores_and_validation():
+    total, contrib = rm.portfolio_scores({"A": 0.5, "B": 0.5}, {"A": 0.8, "B": 0.2})
+    assert total == pytest.approx(0.5) and contrib == {"A": pytest.approx(0.4), "B": pytest.approx(0.1)}
+    with pytest.raises(ValueError):
+        rm.portfolio_scores({"A": 0.5}, {"A": 0.5})
+
+
+def test_scenario_shock_is_bounded_by_likelihood():
+    shock = rm.scenario_shock({"A": 0.5, "B": 0.5}, {"A": {"TW": 1.0}, "B": {"US": 1.0}}, {"TW": 1.0}, 0.2)
+    assert shock == pytest.approx(0.1)
+    assert rm.scenario_shock({"A": 1.0}, {"A": {"TW": 1.0}}, {"TW": 1.0}, 0.2) == pytest.approx(0.2)
+    with pytest.raises(ValueError):
+        rm.scenario_shock({"A": 1.0}, {"A": {"TW": 1.0}}, {"TW": 2.0}, 0.2)
+
+
+def test_ranking_stability_detects_weight_dependence():
+    values = {"A": {"x": 0.9, "y": 0.1}, "B": {"x": 0.1, "y": 0.9}}
+
+    def score(weights):
+        return {k: sum(weights[c] * v for c, v in comps.items()) for k, comps in values.items()}
+    assert rm.ranking_stability(score, {"x": 0.5, "y": 0.5}) < 1.0
+    values = {"A": {"x": 0.9, "y": 0.8}, "B": {"x": 0.1, "y": 0.2}}
+    assert rm.ranking_stability(score, {"x": 0.5, "y": 0.5}) == 1.0

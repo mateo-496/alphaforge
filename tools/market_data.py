@@ -10,6 +10,7 @@ from typing import Any
 from urllib.parse import quote
 
 import edgar_geo_revenue as geo
+from edgar_geo_revenue import _parser as _geo_parser
 import httpx
 import yfinance as yf
 
@@ -34,8 +35,7 @@ def _source(title: str, url: str, locator: str) -> Source:
 
 def _sec_get(url: str) -> httpx.Response:
     global _last_sec_request
-    from core.config import _sec_identity
-    identity = _sec_identity(os.environ.get("SEC_IDENTITY", ""))
+    identity = os.environ.get("SEC_IDENTITY", "")
     if not identity or "example.com" in identity.lower() or "@" not in identity:
         raise ValueError("SEC_IDENTITY must contain a real contact email for SEC access")
     with _SEC_LOCK:
@@ -85,6 +85,24 @@ def _ticker_map() -> dict[str, Any]:
     return cached("sec-tickers", {}, lambda: _sec_get("https://www.sec.gov/files/company_tickers.json").json())
 
 
+# Filers such as NVIDIA report one combined "China (including Hong Kong)" line. The parser skips any label
+# naming two places, which silently drops the whole China exposure. Hong Kong is a SAR of China, so these
+# explicit labels are attributed to CN (the share is then slightly overstated for CN, never lost).
+_CHINA_INCLUDING_HK = ("china (including hong kong)", "china (including hong kong and macau)",
+                       "china including hong kong", "china, including hong kong",
+                       "china and hong kong", "china & hong kong", "mainland china and hong kong",
+                       "china (including hong kong sar)", "china, hong kong and macau")
+
+
+def _register_china_labels() -> None:
+    for label in _CHINA_INCLUDING_HK:
+        geo.SEG_MAP.setdefault(label, "CN")
+    _geo_parser._SEG_MAP_BY_LEN = sorted(geo.SEG_MAP.items(), key=lambda kv: -len(kv[0]))
+
+
+_register_china_labels()
+
+
 def _oldest_year_first(table, fiscal_year: int) -> bool:
     for row in table.find_all("tr")[:4]:
         years = list(dict.fromkeys(
@@ -96,18 +114,8 @@ def _oldest_year_first(table, fiscal_year: int) -> bool:
     return False
 
 
-MAX_R_PAGES = 12
-_TITLE_RANK = [re.compile(r"geograph|countr|by\s+region|regional|area", re.I),
-               re.compile(r"disaggregat|revenue|net\s+sales|turnover", re.I),
-               re.compile(r"segment", re.I)]
-_ASSET_TITLE = re.compile(r"long[- ]lived|property|plant|non-?current\s+assets|goodwill|intangible|income\s+tax|deferred", re.I)
-_REVENUE_WORD = re.compile(r"revenue|net\s+sales|sales|turnover|income\s+from\s+operations", re.I)
-
-
 def get_country_exposures(ticker: str) -> dict[str, Any]:
-    """Read country (and, when that is all the filing gives, region) revenue shares from the latest SEC 10-K or
-    20-F. Region rows come back as "REGION:<code>" (e.g. REGION:EUROPE): real disclosed shares, never split
-    into invented country numbers."""
+    """Read country revenue shares from the latest SEC 10-K or 20-F, where available."""
     _validate_ticker(ticker)
 
     def fetch() -> dict:
@@ -126,55 +134,55 @@ def get_country_exposures(ticker: str) -> dict[str, Any]:
         fiscal_year = date.fromisoformat(fiscal_date).year
         base = f"https://www.sec.gov/Archives/edgar/data/{int(cik)}/{accession}"
         root = ET.fromstring(_sec_get(f"{base}/FilingSummary.xml").content)
-        # Which XBRL report pages may hold the geographic revenue table, best first. The old filter only looked
-        # at titles containing "geograph|segment" and then required the words "net sales / net revenue / total
-        # revenue", which rejected most tables headed "Revenues" and every "Disaggregation of revenue" page.
-        pages = []
+        candidates = []
+        skipped_year_order = False
         for report in root.findall(".//Report"):
             title = report.findtext("ShortName", "")
             filename = report.findtext("HtmlFileName", "")
-            if not re.fullmatch(r"R\d+\.htm", filename, re.I) or _ASSET_TITLE.search(title):
+            if not re.search(r"geograph|segment", title, re.I):
                 continue
-            rank = next((i for i, rx in enumerate(_TITLE_RANK) if rx.search(title)), None)
-            if rank is not None:
-                pages.append((rank, title, filename))
-        pages.sort(key=lambda p: p[0])
-        candidates, skipped_year_order = [], False
-        for rank, title, filename in pages[:MAX_R_PAGES]:
+            if not re.fullmatch(r"R\d+\.htm", filename, re.I):
+                continue
             url = f"{base}/{filename}"
             html = _sec_get(url).text
             table = geo.find_geo_table(html)
             if table is None:
                 continue
-            if not _REVENUE_WORD.search(table.get_text(" ", strip=True) + " " + title):
+            text = table.get_text(" ", strip=True)
+            if not re.search(r"\b(?:net\s+sales|net\s+revenue|total\s+revenues?)\b", text, re.I):
                 continue
-            if _oldest_year_first(table, fiscal_year):   # the parser reads the first numeric column
+            if not any(re.fullmatch(r"(?:total|total\s+revenues?|total\s+net\s+sales|worldwide)",
+                                    row.find(["td", "th"]).get_text(" ", strip=True), re.I)
+                       for row in table.find_all("tr") if row.find(["td", "th"])):
+                continue
+            # The upstream parser uses the first numeric column for each country.
+            if _oldest_year_first(table, fiscal_year):
                 skipped_year_order = True
                 continue
             result = geo.parse_geo_table(table, html, fiscal_year)
-            if not result or not (result.get("segments") or result.get("region_segments")):
+            if not result or not result.get("segments"):
                 continue
-            countries = [(c, float(v) / 100) for c, v in result.get("segments") or [] if re.fullmatch(r"[A-Z]{2}", c)]
-            regions = [(f"REGION:{c}", float(v) / 100) for c, v in result.get("region_segments") or []]
-            shares = sorted(countries + regions)
-            total = sum(v for _, v in shares)
-            if not shares or any(not 0 <= v <= 1 for _, v in shares) or total > 1.05:
-                continue
-            clean = 0.9 <= total <= 1.05
-            candidates.append({"clean": clean, "rank": rank, "n": len(shares), "shares": shares, "title": title,
-                               "url": url, "fy": result.get("fiscal_year") or fiscal_year})
-            if clean and len(countries) >= 2:
-                break   # a full company-wide country table: good enough, save requests
+            shares = sorted((country, float(percent) / 100) for country, percent in result["segments"])
+            if any(not re.fullmatch(r"[A-Z]{2}", c) or not 0 <= v <= 1 for c, v in shares):
+                raise ValueError(f"Invalid SEC geographic revenue values for {ticker}")
+            if sum(v for _, v in shares) > 1 + 1e-9:
+                raise ValueError(f"Overlapping SEC geographic revenue values for {ticker}")
+            candidates.append((shares, title, url, result["fiscal_year"]))
         if not candidates:
             status = "unsupported_fiscal_year_order" if skipped_year_order else "no_country_revenue_found"
-            return {"ticker": ticker, "status": status, "exposures": [], "filing_url": base, "fiscal_year": fiscal_year,
-                    "pages_checked": [t for _, t, _ in pages[:MAX_R_PAGES]]}
-        # Several tables can match (revenue by country and by region, segment sub-tables): keep the one closest
-        # to a full company-wide breakdown instead of failing the whole holding.
-        best = sorted(candidates, key=lambda c: (not c["clean"], c["rank"], -c["n"]))[0]
-        source = _source(f"{ticker} SEC annual filing", best["url"], f"{best['title']}; fiscal year {best['fy']}")
-        return {"ticker": ticker, "status": "available", "fiscal_year": best["fy"],
-                "exposures": [{"country": country, "revenue_share": share, "source": source.model_dump(mode="json")}
-                              for country, share in best["shares"]]}
+            return {"ticker": ticker, "status": status, "exposures": [],
+                    "filing_url": base, "fiscal_year": fiscal_year}
+        # Tables may differ only by coverage (one drops a row the other keeps): take the fullest one,
+        # but any country present in two tables must carry the same share, otherwise review is needed.
+        shares, title, url, reported_year = max(candidates, key=lambda c: sum(v for _, v in c[0]))
+        best = dict(shares)
+        for other, *_ in candidates:
+            if any(c in best and abs(best[c] - v) > 1e-6 for c, v in other):
+                raise ValueError(f"Conflicting geographic revenue tables for {ticker}; manual review required")
+        source = _source(f"{ticker} SEC annual filing", url, f"{title}; fiscal year {reported_year}")
+        return {"ticker": ticker, "status": "available", "fiscal_year": reported_year,
+                "exposures": [{"country": country, "revenue_share": share,
+                               "source": source.model_dump(mode="json")}
+                              for country, share in shares]}
 
-    return cached("sec-exposures-v2", {"ticker": ticker}, fetch)   # v2: old cached "not found" results ignored
+    return cached("sec-exposures", {"ticker": ticker, "parser": 2}, fetch)

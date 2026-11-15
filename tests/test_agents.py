@@ -192,7 +192,7 @@ class TestAlphaForgeArchitecture(unittest.TestCase):
         
         # Verify official domains were recognized and added
         brazil_urls = [s["url"] for s in brazil_sources]
-        self.assertTrue(any("brazil" in u for u in brazil_urls))
+        self.assertTrue(any(f".{get_country_domain('Brazil')}/" in u for u in brazil_urls))
         initial_count = len(brazil_sources)
 
         # 2. Run discovery a second time: verify no duplicates are added

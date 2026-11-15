@@ -25,6 +25,7 @@ and helpers. The chain is therefore not currently runnable end to end.
 | Agent | Role | Current status |
 | --- | --- | --- |
 | [Filings](agents/filings_agent.md) | Extract cited exposures from company filings | Standalone implementation; dependency and integration caveats |
+| [Filing risks](agents/filing_risk_agent.md) | Extract disclosed annual-filing risks for a portfolio | Standalone MCP implementation; ambiguous sections require review |
 | [Market stress](agents/market_stress_agent.md) | Analyze market indicators and portfolio exposures | Standalone implementation using MCP |
 | [Geopolitical](agents/geopolitical_agent.md) | Assess country risk under a scenario | Legacy code; requires migration |
 | [Risk](agents/risk_agent.md) | Calculate portfolio and ticker risk | Legacy code; requires migration |

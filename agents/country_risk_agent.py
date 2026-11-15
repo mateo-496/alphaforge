@@ -8,6 +8,7 @@ from storage.s3_service import save_json
 from tools.bank_api import get_bank_data
 from tools.bedrock_service import explain_risk, generate_insights_with_bedrock
 from tools.country_api import get_country_data
+from tools.country_risk_inputs import country_risk_score
 from tools.risk_calculator import calculate_risk
 from tools.sovereign_risk import country_risk
 
@@ -29,6 +30,11 @@ def _score_to_severity(val: float | None, high_is_bad: bool = True) -> int:
     return 5
 
 def analyze_country(country: str, bank: Optional[str] = None) -> CountryReport:
+    """Analyze a country and return only the CountryReport (see analyze_country_scored)."""
+    return analyze_country_scored(country, bank)[0]
+
+
+def analyze_country_scored(country: str, bank: Optional[str] = None) -> tuple[CountryReport, Optional[dict]]:
     """Analyze a country's sovereign and financial risk, returning a valid CountryReport.
     
     Coordinates with source_agent for verified sources, gathers economic and banking
@@ -63,20 +69,10 @@ def analyze_country(country: str, bank: Optional[str] = None) -> CountryReport:
     # 4. Synthesize Bedrock explanation
     explanation = explain_risk(country, assessment, country_data, bank_data)
 
-    # 5. Build Indicators contract
+    # 5. Build Indicators contract from measured inputs only (GPR, global stress); EPU is not sourced yet
     stress_val = float(assessment.get("score") or r_c)
-    gpr_val = round(90.0 + (stress_val * 0.4), 2)
-    gpr_z_val = round((gpr_val - 100.0) / 12.0, 2)
-    epu_val = round(105.0 + (stress_val * 0.8), 2)
-    vol_val = round(14.0 + (stress_val * 0.12), 2)
-
-    indicators = Indicators(
-        gpr=gpr_val,
-        gpr_z=gpr_z_val,
-        epu=epu_val,
-        vol_index=vol_val,
-        stress=round(stress_val, 2)
-    )
+    measured = None  # computed after the claims, which feed the claim-quality term of R_c
+    indicators = Indicators(stress=round(stress_val, 2))
 
     # 6. Generate grounded Claim instances
     claims: list[Claim] = []
@@ -167,6 +163,22 @@ def analyze_country(country: str, bank: Optional[str] = None) -> CountryReport:
         )
     )
 
+    # Measured R_c: GPR and global-stress percentiles plus the claim quality of real (non-demo) macro data.
+    # Claims built from synthetic demo data are left out rather than treated as evidence.
+    try:
+        measured = country_risk_score(country, as_of_date, [] if country_data.get("is_demo") else claims)
+    except Exception:
+        logger.exception("Measured country risk inputs unavailable for %s", country)
+        measured = None
+    if measured:
+        gpr_info, stress_info = measured["gpr"], measured["stress"]
+        indicators = Indicators(
+            gpr=round(gpr_info["current_12m_mean"], 4) if gpr_info else None,
+            vol_index=round(stress_info["latest"], 4) if stress_info else None,
+            stress=round(stress_val, 2))
+        # R_c on 0-100; the macro score stays in `stress`
+        r_c = 100.0 * measured["score"]
+
     # 7. Generate forward-looking Event instances
     events: list[Event] = [
         Event(
@@ -218,7 +230,7 @@ def analyze_country(country: str, bank: Optional[str] = None) -> CountryReport:
     country_slug = country.lower().replace(" ", "-")
     save_json(f"assessments/{country_slug}.json", report)
 
-    return report
+    return report, measured
 
 class RiskAgent:
     """Agent responsible for national risk assessment and CountryReport generation."""
