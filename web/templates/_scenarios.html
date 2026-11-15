@@ -24,10 +24,11 @@
     </div>
 
     {% for g in r.scenario_sets %}
-    {% set grp = r.scenarios|selectattr("scope", "equalto", g.scope)|list %}
+    {% set grp = r.scenarios|selectattr("scope", "equalto", g.scope)|sort(attribute="exposure", reverse=true)|list %}
     <div class="scen-group">
       <h3>{{ g.label }} <span class="muted small">· {{ grp|length }} scenarios · week {{ g.week }}</span></h3>
-      {% if g.after_as_of %}<p class="flag-note">Built from sources dated {{ g.computed_at[:10] }}, after the analysis date. No earlier set exists, so these scenarios carry look-ahead.</p>{% endif %}
+      {% if g.after_as_of and grp %}<p class="flag-note">Built from sources dated {{ g.computed_at[:10] }}, after the analysis date. No earlier set exists, so these scenarios carry look-ahead.</p>{% endif %}
+      {% if not grp %}<p class="muted">The analysis did not surface any scenario for {{ g.label|replace("Most dangerous for ", "") }} this week.</p>{% endif %}
       <div class="scen-list">
         {% for s in grp %}
         <label class="scen-item{% if loop.index > 6 %} more{% endif %}">
@@ -35,15 +36,9 @@
           <span class="scen-name">{{ s.name }}{% if s.status == "fading" %} <em class="badge badge-fading" title="Not in this week's sources; decaying">fading</em>{% endif %}</span>
           <span class="scen-desc">{{ s.summary|truncate(350, true, "…", 0) }}</span>
           <span class="metrics">
-            <span class="m-label">Revenue exposed</span>
+            <span class="m-label" title="Revenue in countries directly involved">Revenue at stake</span>
             <span class="m-track"><i class="m-fill m-rev" style="width: {{ [s.exposure * 100, 100]|min|round(1) }}%"></i></span>
             <span class="m-val mono">{{ "%.0f"|format(s.exposure * 100) }}%</span>
-            <span class="m-label">Impact</span>
-            <span class="m-track"><i class="m-fill" style="width: {{ s.impact * 20 }}%"></i></span>
-            <span class="m-val mono">{{ s.impact }}/5</span>
-            <span class="m-label">Probability, 12 mo</span>
-            <span class="m-track"><i class="m-fill" style="width: {{ (s.likelihood * 100)|round(1) }}%"></i></span>
-            <span class="m-val mono">{{ "%.0f"|format(s.likelihood * 100) }}%</span>
           </span>
           {% set src = s.evidence|selectattr("quote_verified")|list %}
           {% if src %}<span class="scen-src small">Sources

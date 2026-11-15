@@ -1,6 +1,7 @@
 """Starter universe, prices and FX lookups used to validate and normalise uploaded portfolios."""
 import csv
 import io
+import json
 import os
 from bisect import bisect_right
 from functools import lru_cache
@@ -18,6 +19,12 @@ KIND = {"equity": "equity", "etf": "etf_equity", "bond_etf": "etf_bond", "commod
 
 
 @lru_cache
+def load() -> dict:
+    """Sample portfolios and their assets' countries (examples/portfolios.json)."""
+    return json.loads((HERE.parent / "examples" / "portfolios.json").read_text())
+
+
+@lru_cache
 def starter() -> dict[str, dict]:
     """The 31 starter assets (with daily prices)."""
     with open(HERE / "assets_universe.csv", newline="") as f:
@@ -28,7 +35,6 @@ def starter() -> dict[str, dict]:
 def universe() -> dict[str, dict]:
     """Starter assets + the sample-portfolio assets (examples/portfolios.json). Starter wins on conflicts,
     and sample tickers that alias a starter one (RY -> RY.TO, BTC -> BTC-USD) are not duplicated."""
-    from core.sample_portfolios import load
     u = dict(starter())
     for t, a in load()["assets"].items():
         if _starter_alias(t):
@@ -81,20 +87,47 @@ def _last_on_or_before(dates: list, values: list, day: str) -> float | None:
     return values[i - 1] if i else None
 
 
-def price_in(ticker: str, day: str, base: str) -> float | None:
-    """Close on or before `day` (no look-ahead), converted to the base currency."""
+def _usdcad(day: str) -> float | None:
     s = _series()
-    if not s or ticker not in s[0]:
+    if s:
+        rate = _last_on_or_before(s[1], s[2], day)
+        if rate:
+            return rate
+    try:  # FRED DEXCAUS (CAD per USD) through the shared market tools and cache
+        from datetime import date as _d
+        from core.storage import cached
+        from tools.market_stress import get_market_series
+        day = min(day, _d.today().isoformat())
+        ser = cached("market-series", {"series_id": "DEXCAUS", "as_of": day, "days": 30},
+                     lambda: get_market_series("DEXCAUS", day, 30))
+        return ser["observations"][-1]["value"]
+    except Exception:
         return None
-    prices, fd, fv = s
-    px = _last_on_or_before(*prices[ticker], day)
-    ccy = universe()[ticker]["currency"]
-    if px is None or ccy == base:
-        return px
-    rate = _last_on_or_before(fd, fv, day)  # USD -> CAD
+
+
+def price_in(ticker: str, day: str, base: str) -> tuple[float | None, str]:
+    """(close on or before `day`, converted to the base currency; source or error).
+    Starter dataset first, then Yahoo Finance through the shared market tools (any listed ticker)."""
+    px, ccy, src = None, universe().get(ticker, {}).get("currency", "USD"), "starter dataset"
+    s = _series()
+    if s and ticker in s[0]:
+        px = _last_on_or_before(*s[0][ticker], day)
+    if px is None:
+        try:
+            from datetime import date as _d
+            from tools.market_data import get_price_history
+            ser = get_price_history(ticker, min(day, _d.today().isoformat()), 10)
+            px, ccy, src = ser["observations"][-1]["value"], ser["unit"].upper(), "Yahoo Finance"
+        except Exception as e:
+            return None, f"no starter price and Yahoo failed: {type(e).__name__}"
+    if ccy == base:
+        return px, src
+    if {ccy, base} != {"USD", "CAD"}:
+        return None, f"price in {ccy}, no conversion to {base}"
+    rate = _usdcad(day)
     if rate is None:
-        return None
-    return px * rate if base == "CAD" else px / rate
+        return None, "no USD/CAD rate"
+    return (px * rate if base == "CAD" else px / rate), src
 
 
 def prices_available() -> bool:

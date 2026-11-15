@@ -1,107 +1,85 @@
-"""Geopolitical agent: country -> geopolitical risk claims from the GPR index in S3, as an AgentOutput.
+"""Geopolitical agent: country hazard on the analysis date (risk formula v2, tools/risk_math).
 
-Same contract as the filings agent: the LLM produces a DraftOutput (claims + summary); code turns it
-into an AgentOutput (claim ids, sources, quote verification). One AgentOutput per country.
-
-Usage (from repo root):
-    python -m agents.geopolitical_agent Taiwan China --as-of 2026-10-31
+Code computes the number: g_c = percentile of the country's Caldara–Iacoviello GPR index among its own past
+months (point in time). Countries the index does not cover use the global GPR, labelled as such.
+Scenarios do not change the number; they are listed as context for the driver line.
+One Bedrock call then writes a one-line driver per country from those facts. If the call fails,
+the driver is a plain factual line built by code, so the report never shows invented text.
 """
-import argparse
-import os
-import re
-from datetime import date, datetime, timezone
+import json
 
-from strands import Agent
+from pydantic import BaseModel, Field
 
-from agents.base import build_model
-from core import config
-from core.citations import CitationError, resolve_citations
-from core.schemas import AgentOutput, Claim, DraftOutput, Entity, Source
-from tools import geopolitics
+from core import llm
+from tools import gpr, risk_math
 
 AGENT = "geopolitical"
+MAX_LLM_COUNTRIES = 25
 
-SYSTEM_PROMPT = """You are the Geopolitical analyst of AlphaForge, a geopolitical portfolio-risk system.
-Goal: for one country, extract atomic geopolitical-risk claims using ONLY the GPR index data in S3.
-
-Data: extract_portfolio_from_s3_excel returns monthly rows with
-- gpr: global Geopolitical Risk index (1985-2019 = 100),
-- gprc_<iso3>: share (%) of newspaper articles about geopolitical risk involving the country (since 1985),
-- gprhc_<iso3>: same, historical series (3 newspapers, since 1900).
-
-Method:
-1. Call extract_portfolio_from_s3_excel for the country (months=24 is a good default; use more,
-   e.g. 120, to compare the current level with its own history).
-2. Emit one claim per finding: current level, trend (rising / falling), spikes, level versus the
-   country's own history, level versus the global index.
-
-Rules:
-- Point-in-time: ignore rows after the given as_of date; never use outside knowledge of events.
-- channel: the GPR index measures conflict and tension news, so use "conflict_exposure" unless the
-  data clearly supports another channel of the taxonomy.
-- value + unit: the number the claim rests on (unit "pct_articles" for gprc/gprhc, "index" for gpr).
-- evidence_quote: copied VERBATIM from the tool output JSON, e.g. "month": "2026-10", "gpr": 150.52
-  (a contiguous piece of one row). Never reformat or round numbers inside a quote.
-- locator: series and month, e.g. "gprc_twn, 2026-10".
-- score = severity 0-5; confidence = 0-1 that the claim is correctly read from the data.
-- Do NOT set ids or sources; code does that.
-- summary: short prose where EVERY sentence ends with claim citations by position, e.g. "... [1][3]."
-- At most ~8 claims, most material first."""
+SYSTEM_PROMPT = """You are the Geopolitical analyst of AlphaForge, a portfolio-risk system.
+For each country you get computed facts: its hazard (the percentile of its geopolitical-risk index among its
+own past months, 0-100), whether that comes from the country's own index or the global one, and the
+scenarios in which it is directly involved.
+Write ONE short driver per country (max 60 characters, a noun phrase, no full sentence) naming what drives it,
+e.g. "Taiwan Strait crisis, chip export controls". The percentile is shown in its own column: do not repeat it.
+Use only the supplied facts and scenario names. Do not add numbers. No advice."""
 
 
-def build_agent() -> Agent:
-    return Agent(model=build_model(), system_prompt=SYSTEM_PROMPT, name=AGENT,
-                 tools=geopolitics.tools())
+class CountryDriver(BaseModel):
+    country: str = Field(description="ISO alpha-3 code exactly as supplied")
+    driver: str = Field(description="Max 60 characters, noun phrase")
 
 
-def run(country: str, as_of: str | None = None) -> AgentOutput:
-    """Analyze one country (name or ISO3 code) and return a validated AgentOutput."""
-    as_of = as_of or date.today().isoformat()
-    geopolitics.RETRIEVED_TEXT.clear()
-    geopolitics.MATCHED_COUNTRIES.clear()
-    result = build_agent()(f"Analyze the geopolitical risk of {country} as of {as_of}.",
-                           structured_output_model=DraftOutput)
-    draft: DraftOutput = result.structured_output
-
-    # Entity: the country's ISO3 code from the tool (the claim ids need a stable key).
-    iso3 = next((code for name, code in geopolitics.MATCHED_COUNTRIES.items()
-                 if country.strip().lower() in (name.lower(), code.lower())), country.upper())
-
-    now = datetime.now(timezone.utc).isoformat(timespec="seconds")
-    src_url = f"s3://{config.GEO_S3_BUCKET}/raw/gpr_data/data_gpr_export.xls"
-    claims = []
-    for n, d in enumerate(draft.claims, 1):  # ids, sources and quote check are done by code
-        src = Source(title="Geopolitical Risk (GPR) index, data_gpr_export.xls", url=src_url,
-                     locator=d.locator, retrieved_at=now)
-        claims.append(Claim(id=f"{AGENT}:{iso3}:{n:03d}", sources=[src],
-                            quote_verified=geopolitics.quote_is_verified(d.evidence_quote),
-                            **d.model_dump(exclude={"locator"})))
-    # The LLM cites claims by position ([1], [2]...); map them to stable claim ids.
-    summary = re.sub(r"\[(\d+)\]",
-                     lambda m: f"[{claims[int(m.group(1)) - 1].id}]" if 0 < int(m.group(1)) <= len(claims) else m.group(0),
-                     draft.summary)
-    return AgentOutput(agent=AGENT, entity=Entity(ticker=iso3), as_of=as_of, claims=claims, summary=summary)
+class CountryDrivers(BaseModel):
+    drivers: list[CountryDriver]
 
 
-if __name__ == "__main__":
-    import sys
-    sys.stdout.reconfigure(encoding="utf-8", errors="replace")  # model output may contain emoji (cp1252 on Windows pipes)
+def _fallback(f: dict) -> str:
+    g = f.get("gpr")
+    if not g:
+        return "No GPR data"
+    if f["scenarios"]:
+        return ", ".join(s["name"] for s in f["scenarios"][:2])
+    return "Global GPR (no country index)" if f["proxy"] else "No scenario involves it"
 
-    p = argparse.ArgumentParser()
-    p.add_argument("countries", nargs="*", default=["Taiwan", "China"])
-    p.add_argument("--as-of", default=None)
-    args = p.parse_args()
 
-    os.makedirs("outputs", exist_ok=True)
-    for c in args.countries:
-        report = run(c, args.as_of)
-        print("\n" + report.model_dump_json(indent=2))
-        with open(f"outputs/{report.entity.ticker}_geopolitical.json", "w", encoding="utf-8") as fh:
-            fh.write(report.model_dump_json(indent=2))
-        unverified = [cl.id for cl in report.claims if not cl.quote_verified]
-        if unverified:
-            print(f"WARNING: quotes not found in tool output: {unverified}")
+def assess(countries: list[str], as_of: str, scenarios: list[dict], market: dict, names: dict,
+           exposure: dict, on_event=None) -> tuple[dict, dict]:
+    """Returns ({iso3: {g, gpr, proxy, scenarios, driver, method}}, meta {gpr, llm, error}).
+    `market` is accepted for context only (the amplifier is applied once, at portfolio level)."""
+    emit = on_event or (lambda *a, **k: None)
+    meta = {"gpr": None, "llm": False, "error": None}
+    try:
+        tbl = gpr.table()
+        meta["gpr"] = {"name": f"Geopolitical Risk index — {gpr.CITATION}", "url": tbl["url"],
+                       "retrieved": tbl["retrieved_at"]}
+    except Exception as e:
+        tbl, meta["error"] = None, f"GPR unavailable: {type(e).__name__}"
+    glob = gpr.at(tbl, "GLOBAL", as_of) if tbl else None
+    out = {}
+    for c in countries:
+        own = gpr.at(tbl, c, as_of) if tbl else None
+        g = own or glob
+        involved = sorted(({"name": s["name"], "key": s.get("key"), "intensity": s["countries"][c]}
+                           for s in scenarios if s["countries"].get(c, 0) >= risk_math.INVOLVED), key=lambda x: -x["intensity"])
+        out[c] = {"g": g["pct"] if g else None, "gpr": g, "proxy": own is None and g is not None,
+                  "scenarios": involved[:3],
+                  "method": "country GPR" if own else "global GPR (country not covered)" if g else "no data"}
+        out[c]["driver"] = _fallback(out[c])
+    ranked = sorted((c for c in countries if out[c]["g"] is not None), key=lambda c: -exposure.get(c, 0))[:MAX_LLM_COUNTRIES]
+    if ranked:
+        emit("llm", "start", "bedrock", "Writing country drivers", f"{len(ranked)} countries · one call")
+        facts = [{"country": c, "name": names.get(c, c), "hazard_percentile": round(100 * out[c]["g"]),
+                  "index": "own" if not out[c]["proxy"] else "global",
+                  "scenarios_involved": [s["name"] for s in out[c]["scenarios"]]} for c in ranked]
         try:
-            resolve_citations(report.summary, [report])  # every sentence must cite a valid claim id
-        except CitationError as e:
-            print(f"WARNING: citation check failed: {e}")
+            res = llm.ask(AGENT, SYSTEM_PROMPT, json.dumps(facts), CountryDrivers, max_tokens=3000)
+            for d in res.drivers:
+                if d.country in out and d.driver.strip():
+                    out[d.country]["driver"] = d.driver.strip()[:160]
+            meta["llm"] = True
+            emit("llm", "done", "bedrock", "Writing country drivers", f"{len(res.drivers)} drivers")
+        except Exception as e:
+            meta["error"] = f"driver writing failed: {type(e).__name__}: {str(e)[:200]}"
+            emit("llm", "done", "bedrock", "Writing country drivers", "unavailable, factual lines kept")
+    return out, meta

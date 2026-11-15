@@ -13,7 +13,7 @@
   <section class="progress block" id="progress" {% if run.status == "done" %}hidden{% endif %}>
     <div class="block-head">
       <ol class="phases">
-        {% for key, lbl in [("assets", "Company filings"), ("countries", "Country risk"), ("scenarios", "Scenarios"), ("risk", "Portfolio risk"), ("report", "Report")] %}
+        {% for key, lbl in [("assets", "Market data & filings"), ("firms", "Company disclosures"), ("scenarios", "Scenarios"), ("macro", "Macro & sources"), ("countries", "Country risk"), ("risk", "Portfolio risk"), ("remediation", "Recommendations")] %}
         <li data-phase="{{ key }}"><span class="ph-no">{{ "%02d"|format(loop.index) }}</span><span class="ph-label">{{ lbl }}</span><span class="ph-count"></span></li>
         {% endfor %}
       </ol>
@@ -23,6 +23,7 @@
         <span class="now-label" id="now-label">Starting</span>
         <div class="now-stage" id="now-stage"></div>
       </div>
+      <ul class="live" id="live" aria-label="Running in parallel"></ul>
       <div class="bar-track"><span id="bar-fill"></span></div>
       <ol class="log" id="log"></ol>
       <p class="notice" id="run-error" hidden></p>
@@ -30,7 +31,7 @@
   </section>
 
   <div id="result">
-    {% if run.status == "done" %}{% with r = run.result %}{% include "_result.html" %}{% endwith %}{% endif %}
+    {% if run.status == "done" %}{% if stale %}{{ stale_note|safe }}{% else %}{% with r = run.result %}{% include "_result.html" %}{% endwith %}{% endif %}{% endif %}
   </div>
 </div>
 

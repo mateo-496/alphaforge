@@ -1,4 +1,4 @@
-"""Real (non-mock) scenario path with the network and Bedrock stubbed."""
+"""Scenario agent with the network and Bedrock stubbed."""
 import types
 
 import httpx
@@ -21,8 +21,6 @@ PAGE = """<html><body><nav>Menu Home About</nav><main>
 
 @pytest.fixture
 def offline(tmp_path, monkeypatch):
-    monkeypatch.setattr(storage, "LOCAL_ROOT", tmp_path)
-    monkeypatch.setattr(config, "SCENARIO_USE_MOCK", False)
     calls = {"n": 0}
 
     def fake_get(url, **kw):
@@ -44,11 +42,10 @@ def offline(tmp_path, monkeypatch):
     ])
     seen = {}
 
-    class FakeAgent:
-        def __call__(self, prompt, structured_output_model=None):
-            seen["prompt"] = prompt
-            return types.SimpleNamespace(structured_output=draft)
-    monkeypatch.setattr(scenario_agent, "build_agent", lambda: FakeAgent())
+    def fake_ask(agent, system, prompt, schema, **kw):
+        seen["prompt"], seen["model"] = prompt, kw.get("model_id")
+        return draft
+    monkeypatch.setattr(scenario_agent.llm, "ask", fake_ask)
     return calls, seen
 
 
@@ -68,11 +65,11 @@ def test_single_call_verifies_quotes_and_caches_inputs(offline):
 
 
 def test_pipeline_saves_query_and_week(offline):
-    from pipelines.scenarios import run as sc
+    from pipelines import scenarios as sc
     s = sc.generate(force=True)
     keys = storage.list_keys("scenarios/")
     assert any("/queries/" in k for k in keys) and any(k.endswith("latest.json") for k in keys)
-    assert not s.mock and s.scenarios[0].id == "taiwan-blockade"
+    assert s.scenarios[0].id == "taiwan-blockade"
 
 
 def test_summary_hard_limit():

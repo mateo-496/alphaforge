@@ -7,7 +7,7 @@ does not download again, and the exact text the model saw is kept with every que
 import io
 import re
 import time
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 
 import httpx
 
@@ -91,41 +91,22 @@ def fetch_sources(week: str, on_event=None) -> list[dict]:
 
 
 def gpr_snapshot(week: str, on_event=None, top: int = 15) -> dict | None:
-    """Global GPR + the `top` countries with the highest z-score vs. their own history. Cached per week."""
+    """Global GPR + the `top` countries with the highest z-score vs. their own history (shared table, tools/gpr.py)."""
+    from tools import gpr
     emit = on_event or (lambda *a, **k: None)
-    key = f"scenarios/inputs/{week}/gpr.json"
-    cached = storage.read_json(key)
-    if cached:
-        emit("source", "done", "gpr", "Caldara–Iacoviello GPR index", "cached this week")
-        return cached
     emit("source", "start", "gpr", "Caldara–Iacoviello GPR index", GPR_URL)
     try:
-        import pandas as pd
-        r = httpx.get(GPR_URL, headers=UA, timeout=30, follow_redirects=True)
-        r.raise_for_status()
-        df = pd.read_excel(io.BytesIO(r.content))
-        df["month"] = pd.to_datetime(df["month"])
-        df = df.set_index("month").sort_index()
-
-        def stat(col):
-            s = df[col].dropna()
-            if len(s) < 24:
-                return None
-            return {"last_month": s.index[-1].strftime("%Y-%m"), "last": round(float(s.iloc[-1]), 3),
-                    "z": round(float((s.iloc[-1] - s.mean()) / s.std()), 2)}
-
-        countries = []
-        for col in [c for c in df.columns if c.startswith("GPRC_")]:
-            st = stat(col)
-            if st:
-                countries.append({"iso3": col[5:], **st})
-        countries.sort(key=lambda c: -c["z"])
-        snap = {"source": "Caldara & Iacoviello (2022), AER", "url": GPR_URL, "retrieved_at": _now(),
-                "global": stat("GPR") if "GPR" in df else None, "countries": countries[:top]}
+        tbl = gpr.table(week)
+        today = date.today().isoformat()
+        rows = [x for x in (gpr.at(tbl, c, today) for c in gpr.covered(tbl)) if x]
+        rows.sort(key=lambda c: -c["z"])
+        g = gpr.at(tbl, "GLOBAL", today)
+        snap = {"source": gpr.CITATION, "url": GPR_URL, "retrieved_at": tbl["retrieved_at"],
+                "global": {"last_month": g["month"], "last": g["level"], "z": g["z"]} if g else None,
+                "countries": [{"iso3": c["iso3"], "last_month": c["month"], "last": c["level"], "z": c["z"]} for c in rows[:top]]}
     except Exception as e:
         emit("source", "done", "gpr", "Caldara–Iacoviello GPR index", "unavailable")
         return {"error": f"{type(e).__name__}: {str(e)[:160]}"}
-    storage.write_json(key, snap)
     emit("source", "done", "gpr", "Caldara–Iacoviello GPR index", f"top {len(snap['countries'])} countries")
     return snap
 

@@ -1,31 +1,35 @@
 # CLAUDE.md
 
-This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+AlphaForge: geopolitical risk of a portfolio, fitted to an investor profile. See README.md for the pipeline.
 
-## Architecture
+## Rules
 
-AlphaForge evaluates the geopolitical risk of a portfolio under a scenario and proposes remediation trades. Chain: `Portfolio + InvestorProfile + Scenario -> filings -> geopolitical -> risk -> remediation` (`orchestrator/chain.py`), and each step is recorded as a `Step` (input, output, ms) in a `ChainResult`.
+- **No LLM number enters the score.** LLMs extract facts (verbatim quotes, country lists) or write prose;
+  code verifies quotes and computes every number: Cedric's formula `tools/portfolio_score.py` fed by `web/scoring.py`
+  (spec: `docs/risk-formula.md`).
+- Country splits come from `agents/exposure_agent.py`: tiered fallback chain, every split tagged with its tier.
+- **Every LLM call goes through `core/llm.py`** (`ask` or `run_tools`). Never call Bedrock directly: the Tracer
+  (tokens, input, output → data/traces + CloudTrail Lake) depends on it. No `temperature`: newer Claude models reject it.
+- `core/schemas.py` is the contract between agents, pipeline and templates. Change it deliberately.
+- Any agent may fail: the pipeline degrades (factual fallback text, labelled estimates), never crashes.
+- Point in time: agents only use data published on or before the analysis date.
+- No mock data in the app. Test stubs live in tests/fakes.py and are never imported by the app.
+- Do not modify the risk formula files (`tools/risk_math.py`, `risk_calculator.py`, `portfolio_score.py`,
+  `portfolio_risk.py`, `weights.py`, `market_inputs.py`, `sovereign_risk.py`, `country_risk_inputs.py`) without being asked.
 
-- `core/schemas.py` is the contract. One agent's output schema is the next agent's input, and the web renders the same JSON. Change it deliberately.
-- Logic lives in `tools/` and `agents/`. `lambdas/` handlers only parse the event, call a function and return.
-- Agents explain, `tools/risk_math.py` computes. Scores are deterministic, and the risk agent overwrites any LLM-produced numbers.
-- Mock first: with `USE_MOCK=1` (the default), every agent returns hard-coded valid schemas, so the chain and web work without AWS.
-- Request flow: web (Amplify) -> API Gateway -> `lambdas/api` -> `orchestrator/app.py` (AgentCore Runtime) -> agents -> AgentCore Gateway -> `lambdas/gateway_tools` -> `tools/*`.
-- Most of `tools/*`, `pipelines/`, `infra/` and `web/` are stubs (`NotImplementedError` / README only).
-
-## Environment & commands
+## Commands
 
 ```bash
-conda create -n alphaforge python=3.12 -y
 pip install -r requirements.txt
-python -m orchestrator.chain   # run the mock chain
-pytest                         # all tests; single: pytest tests/test_chain.py::test_mock_chain
-python test_bedorck.py   # verifies AWS Bedrock access; prints a short reply from the model
+uvicorn web.app:app --reload --port 8080            # needs .env (see .env.example)
+pytest                                              # all tests are offline (stubs live in tests/ only)
+python -m agents.filings_agent NVDA --as-of 2026-06-30
+python -m pipelines.scenarios [--country TWN] [--force]
+python -m agents.exposure_agent NVDA --as-of 2026-11-12   # --warm fills the peer library
+python -m agents.filing_risk_agent NVDA --as-of 2026-06-30
+python -m agents.country_risk_agent CAN CHN --as-of 2026-11-12
+python -m agents.geopolitical_claims_agent TWN --as-of 2026-11-12
+python -m agents.source_agent CAN
 ```
 
-- LLM access goes through **AWS Bedrock** (`boto3` `bedrock-runtime`, region `us-east-1`, `converse` API). The smoke test uses the model ID `global.anthropic.claude-haiku-5-5`. You need AWS credentials to run it; `.aws/` and `.env` are gitignored, so keep credentials there.
-- `requirements.txt` sets the intended stack: `strands-agents` / `strands-agents-tools` (agent framework), `bedrock-agentcore`, `mcp`, `slack_bolt` / `slack_sdk` (Slack bot interface), `starlette` / `uvicorn` (HTTP serving), plus `pydantic` and `rich`.
-
-## Data
-
-`data/` and `*.parquet` files are gitignored. Datasets live locally and are never committed.
+`data/` is gitignored: caches, run state, traces.

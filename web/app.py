@@ -1,40 +1,66 @@
-"""AlphaForge web: portfolio + investor profile input, validation and review.
+"""AlphaForge web: portfolio + investor profile form, run page and report.
 
-Run locally:  uvicorn web.app:app --reload   (from the repo root)
+Run locally:  uvicorn web.app:app --reload --port 8080   (from the repo root)
 """
 import asyncio
 import json
+import logging
 import math
 from pathlib import Path
 
-from fastapi import FastAPI, File, Form, Request, UploadFile
+from fastapi import FastAPI, File, Request, UploadFile
 from fastapi.responses import HTMLResponse, JSONResponse, PlainTextResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from pydantic import ValidationError
 
+from core import config
 from core.schemas import AnalysisRequest, Holding, InvestorProfile, Portfolio
-from web import mock, pipeline, universe as U
+from web import pipeline, universe as U
 from web.store import runs
 from web.samples import samples
-from web.personas import COUNTRIES, INTERESTS, PERSONAS, SCENARIO_COUNTRIES
+from web.personas import PERSONAS
+from web import options as O
 
+if "@" not in config.SEC_IDENTITY:
+    logging.getLogger("uvicorn.error").warning(
+        "SEC_IDENTITY has no email address: every SEC lookup will fail. Set it in .env, e.g. 'Your Name you@domain.com'.")
 HERE = Path(__file__).parent
 app = FastAPI(title="AlphaForge")
 app.mount("/static", StaticFiles(directory=HERE / "static"), name="static")
 tpl = Jinja2Templates(directory=HERE / "templates")
 tpl.env.globals["annexes"] = pipeline.annexes
+
+
+def short_driver(text: str | None, limit: int = 90) -> str:
+    """Driver as a short phrase: drop the percentile clause (it has its own column) and filler words."""
+    import re
+    t = re.sub(r"^[A-Z][\w .'-]{1,30}:\s+", "", text or "")   # "Japan: ..." (the country is in its own column)
+    t = re.sub(r"^\s*(own|global) index at \d+\w* percentile[^;:,.]*[;:,.]\s*", "", t, flags=re.I)
+    t = re.sub(r"^(a (low|high) reading[;,]\s*)", "", t, flags=re.I)
+    if re.match(r"no scenarios? (directly )?involves? (it|them)", t, flags=re.I):
+        return "No scenario involves it"
+    t = re.sub(r"\b(driven by |exposed through |involved in |involvement in |directly )(the )?", "", t, flags=re.I)
+    t = re.sub(r"(?<!\bno)\s+scenarios?\b", "", t, flags=re.I).strip(" ;,.")
+    t = t[:1].upper() + t[1:]
+    return t if len(t) <= limit else t[:limit].rsplit(" ", 1)[0].rstrip(",;") + "…"
+
+
+tpl.env.globals["short_driver"] = short_driver
 _tasks: set = set()
 COUNTRY_NUM = {k: v["num"] for k, v in json.loads((HERE / "countries.json").read_text()).items() if v["num"]}
 
-RISK_LABELS = {"low": "Low", "low_moderate": "Low to moderate", "moderate": "Moderate", "high": "High"}
-VOL_LIMIT = {"low": 0.20, "low_moderate": 0.30, "moderate": 0.40, "high": None}  # our thresholds
+RISK_LABELS = {1: "Very low", 2: "Low", 3: "Moderate", 4: "High", 5: "Very high"}
+OBJECTIVE_LABELS = {1: "Preserve capital", 2: "Income", 3: "Balanced", 4: "Growth", 5: "Maximum growth"}
+VOL_LIMIT = {1: 0.15, 2: 0.25, 3: 0.35, 4: 0.50, 5: None}  # our thresholds, annualised volatility
 
 
 def _ctx(**kw) -> dict:
     return {"universe": U.universe(), "sectors": U.sectors(), "personas": PERSONAS,
-            "samples": samples(), "interests": INTERESTS, "countries": COUNTRIES, "scenario_countries": SCENARIO_COUNTRIES, "risk_labels": RISK_LABELS,
-            "window": U.WINDOW, "prices_ok": U.prices_available(), **kw}
+            "samples": samples(), "scenario_countries": O.COUNTRIES, "risk_labels": RISK_LABELS,
+            "objective_labels": OBJECTIVE_LABELS, "exclusion_options": O.exclusion_options(U.universe()),
+            "country_options": O.country_options(), "interest_options": O.interest_options(),
+            "window": U.WINDOW, "prices_ok": U.prices_available(), "names": pipeline.NAMES, **kw}
 
 
 def _holdings(request: Request, mode: str, rows: list[dict], warnings: list[str]):
@@ -121,15 +147,14 @@ def build_request(form) -> tuple[AnalysisRequest | None, list[str], list[str]]:
 
     if mode in ("quantity", "value") and not errors:
         if mode == "quantity":
-            if not U.prices_available():
-                errors.append("Quantities need the starter price data (set STARTER_DIR).")
             for t in list(amounts):
-                px = U.price_in(t, as_of, base)
+                px, src = U.price_in(t, as_of, base)
                 if px is None:
-                    errors.append(f"No price for {t} on or before {as_of}.")
+                    errors.append(f"No price for {t} on or before {as_of} ({src}). Enter weights or market values instead.")
                 else:
                     amounts[t] *= px
-            notes.append(f"Quantities converted to {base} market value with closing prices on or before {as_of}.")
+            if not errors:
+                notes.append(f"Quantities converted to {base} market value with the last close on or before {as_of}.")
 
     total = sum(amounts.values())
     if not amounts:
@@ -140,22 +165,30 @@ def build_request(form) -> tuple[AnalysisRequest | None, list[str], list[str]]:
         notes.append(f"Weights added up to {total:.1f}%; they were rescaled to 100%.")
 
     pct = lambda k, d: float(form.get(k) or d) / 100
+    sectors, themes, tickers = [], [], []
+    for v in form.getlist("exclusions"):
+        kind, _, val = v.partition(":")
+        if kind == "sector":
+            sectors.append(val)
+        elif kind == "ticker":
+            tickers.append(val)
+        elif kind in ("theme", "text"):
+            t = U.normalise_ticker(val) if kind == "text" else None   # a typed ticker is a ticker
+            (tickers if t else themes).append(t or val)
+    esg = {"0": "none", "1": "some", "2": "high"}.get(form.get("esg", "0"), "none")
     try:
         profile = InvestorProfile(
             persona=form.get("persona") or None,
             age=int(form["age"]) if form.get("age") else None,
             horizon_years=int(form.get("horizon_years") or 10),
-            risk_tolerance=form.get("risk_tolerance", "moderate"),
-            objective=form.get("objective", "balanced"),
-            experience=form.get("experience", "intermediate"),
-            esg_importance=form.get("esg_importance", "none"),
-            avoid_controversies=form.get("avoid_controversies") == "on",
+            risk_level=int(form.get("risk_level") or 3),
+            objective_level=int(form.get("objective_level") or 3),
+            experience={"1": "beginner", "2": "intermediate", "3": "advanced"}.get(form.get("experience", "2"), "intermediate"),
+            esg_importance=esg, avoid_controversies=esg == "high",
             crypto_max=pct("crypto_max", 0), max_single_weight=pct("max_single_weight", 25),
-            excluded_sectors=form.getlist("excluded_sectors"),
-            excluded_tickers=[x for x in (U.normalise_ticker(s) for s in
-                              (form.get("excluded_tickers") or "").replace(";", ",").split(",") if s.strip()) if x],
-            avoid_countries=form.getlist("avoid_countries"),
-            interests=form.getlist("interests"),
+            excluded_sectors=sectors, excluded_themes=themes, excluded_tickers=tickers,
+            avoid_countries=[c for c in form.getlist("avoid_countries") if c in dict(O.COUNTRIES)],
+            interests=[i.strip()[:60] for i in form.getlist("interests") if i.strip()][:20],
             notes=(form.get("notes") or "").strip()[:1000])
     except (ValidationError, ValueError) as e:
         errors.append(f"Profile: {e}")
@@ -180,19 +213,25 @@ def profile_checks(req: AnalysisRequest) -> list[dict]:
     crypto = sum(x for t, x in w.items() if u[t]["asset_class"] == "crypto")
     if crypto > p.crypto_max + 1e-9:
         out.append({"ticker": "crypto", "text": f"Crypto is {crypto:.0%} of the portfolio; the limit is {p.crypto_max:.0%}."})
+    themes = {x.lower() for x in p.excluded_themes}
+    fossil = {"fossil fuels", "coal", "oil sands"} & themes
     for t in w:
-        if u[t]["sector"] in p.excluded_sectors:
+        if u[t]["sector"] and u[t]["sector"] in p.excluded_sectors:
             out.append({"ticker": t, "text": f"{t} is in an excluded sector ({u[t]['sector']})."})
         if t in p.excluded_tickers:
             out.append({"ticker": t, "text": f"{t} is on the exclusion list."})
-    limit = VOL_LIMIT[p.risk_tolerance]
+        if fossil and u[t]["sector"] == "Energy":
+            out.append({"ticker": t, "text": f"{t} is an energy company; the profile excludes {', '.join(sorted(fossil))}."})
+    if "crypto assets" in themes and crypto > 0:
+        out.append({"ticker": "crypto", "text": f"Crypto assets are excluded but make up {crypto:.0%} of the portfolio."})
+    limit = VOL_LIMIT[p.risk_level]
     if limit:
         for t in w:
             v = _vol_1y(t, req.as_of)
             if v and v > limit:
                 out.append({"ticker": t, "text": f"{t} had {v:.0%} annualised volatility over the year to "
                                                   f"{req.as_of}, above {limit:.0%} for a "
-                                                  f"{RISK_LABELS[p.risk_tolerance].lower()} risk profile."})
+                                                  f"{RISK_LABELS[p.risk_level].lower()} risk profile."})
     return out
 
 
@@ -214,7 +253,8 @@ def run_page(request: Request, run_id: str):
     rec = runs.get(run_id)
     if not rec:
         return HTMLResponse("Run not found", status_code=404)
-    return tpl.TemplateResponse(request, "run.html", _ctx(run=rec, req=rec["request"]))
+    return tpl.TemplateResponse(request, "run.html", _ctx(run=rec, req=rec["request"],
+                                                         stale=rec["status"] == "done" and _stale(rec), stale_note=STALE_NOTE))
 
 
 @app.get("/runs/{run_id}/events")
@@ -230,7 +270,19 @@ def run_result(request: Request, run_id: str):
     rec = runs.get(run_id)
     if not rec or rec["status"] != "done":
         return HTMLResponse("", status_code=404)
+    if _stale(rec):
+        return HTMLResponse(STALE_NOTE)
     return tpl.TemplateResponse(request, "_result.html", _ctx(run=rec, req=rec["request"], r=rec["result"]))
+
+
+REPORT_VERSION = 3   # bump when the report's shape changes (v3: Cedric's formula, exposure tiers)
+STALE_NOTE = ('<p class="notice">This report was produced by an earlier version of AlphaForge and cannot be shown '
+              'with the current page. <a href="/">Run the analysis again</a>.</p>')
+
+
+def _stale(rec: dict) -> bool:
+    r = rec.get("result") or {}
+    return r.get("version", 1) < REPORT_VERSION
 
 
 @app.get("/runs/{run_id}/scenarios.json")
@@ -239,7 +291,7 @@ def run_scenarios(run_id: str):
     if not rec or rec["status"] != "done":
         return JSONResponse({"error": "not ready"}, status_code=404)
     r = rec["result"]
-    return {"scenarios": r["scenarios"], "names": mock.COUNTRY_NAMES, "num": COUNTRY_NUM, "highlight": r.get("highlight"),
+    return {"scenarios": r["scenarios"], "names": O.NAMES, "num": COUNTRY_NUM, "highlight": r.get("highlight"),
             "exposure": {c["iso3"]: c["X"] for c in r["by_country"]}, "assets": r["assets"],
             "sets": r.get("scenario_sets", [])}
 
@@ -254,7 +306,7 @@ async def run_refresh_scenarios(request: Request, run_id: str):
         return JSONResponse({"error": "already running"}, status_code=409)
     form = await request.form()
     country = (form.get("country") or "").upper() or None
-    if country and country not in dict(SCENARIO_COUNTRIES):
+    if country and country not in dict(O.COUNTRIES):
         return JSONResponse({"error": f"unknown country {country}"}, status_code=422)
     seq = len(rec["events"])
     _tasks.add(t := asyncio.create_task(pipeline.refresh_scenarios(run_id, country, form.get("force") == "1")))
@@ -272,12 +324,3 @@ def run_scenarios_section(request: Request, run_id: str):
 def run_annexes(request: Request, run_id: str):
     rec = runs.get(run_id)
     return tpl.TemplateResponse(request, "_annexes.html", _ctx(run=rec, req=rec["request"], r=rec["result"]))
-
-
-@app.post("/api/request")
-async def api_request(request: Request):
-    """Same validation as /review, returns the AnalysisRequest JSON (for the orchestrator)."""
-    req, errors, notes = build_request(await request.form())
-    if errors:
-        return JSONResponse({"errors": errors, "notes": notes}, status_code=422)
-    return {"request": req.model_dump(), "notes": notes, "checks": profile_checks(req)}

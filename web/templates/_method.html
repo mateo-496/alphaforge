@@ -1,0 +1,33 @@
+{% set k = r.method %}{% set p = k.params %}
+  <section class="block coll collapsed" id="method">
+    <div class="block-head"><span class="block-no">07</span><h2><button type="button" class="block-toggle" aria-expanded="false">How the score is computed<i class="chev"></i></button></h2>
+      <p>Cedric's two-stage formula (tools/portfolio_score.py), fed only with measured inputs (web/scoring.py). No number written by a language model enters the score.</p></div>
+    <div class="block-body">
+      <ol class="formula mono small">
+        <li><span>Exposure</span><span>X<sub>c</sub> = Σ<sub>i</sub> w<sub>i</sub> w<sub>ic</sub> &nbsp;(country revenue split, tagged by tier)</span></li>
+        <li><span>A1 national</span><span>Σ<sub>c</sub> X<sub>c</sub> M<sub>c</sub> / Σ<sub>covered</sub> X<sub>c</sub>, &nbsp;M<sub>c</sub> = World Bank macro score / 100 = {{ "%.2f"|format(r.inputs.A1) if r.inputs.A1 is not none else "n/a" }} &nbsp;(c<sub>1</sub> = {{ r.conf[0] }})</span></li>
+        <li><span>A2 geopolitical</span><span>Σ<sub>c</sub> X<sub>c</sub> g<sub>c</sub> / Σ<sub>covered</sub> X<sub>c</sub>, &nbsp;g<sub>c</sub> = GPR percentile = {{ "%.2f"|format(r.inputs.A2) if r.inputs.A2 is not none else "n/a" }} &nbsp;(c<sub>2</sub> = {{ r.conf[1] }})</span></li>
+        <li><span>A3 disclosures</span><span>Σ<sub>i</sub> w<sub>i</sub> f<sub>i</sub> / Σ<sub>read</sub> w<sub>i</sub>, &nbsp;f<sub>i</sub> = verified channels / 8 = {{ "%.2f"|format(r.inputs.A3) if r.inputs.A3 is not none else "n/a" }} &nbsp;(c<sub>3</sub> = {{ r.conf[2] }})</span></li>
+        <li><span>Shrinkage</span><span>Ã<sub>k</sub> = c<sub>k</sub> A<sub>k</sub> + (1 − c<sub>k</sub>) μ, &nbsp;μ = {{ p.mu }} &nbsp;(c<sub>k</sub> = share of revenue or weight the input covers)</span></li>
+        <li><span>Convexity</span><span>f(x) = (e<sup>λx</sup> − 1) / (e<sup>λ</sup> − 1), &nbsp;λ = {{ p.lam }}</span></li>
+        <li><span>Blocks</span><span>F<sub>S</sub> = α f(Ã<sub>1</sub>) + (1 − α) f(Ã<sub>3</sub>), &nbsp;F<sub>G</sub> = f(Ã<sub>2</sub>), &nbsp;B = {{ p.w_S }} F<sub>S</sub> + {{ p.w_G }} F<sub>G</sub>, &nbsp;α = {{ p.alpha }}</span></li>
+        <li><span>Interaction</span><span>R<sub>0</sub> = B + η F<sub>S</sub> F<sub>G</sub> (1 − B), &nbsp;η = {{ p.eta }}</span></li>
+        <li><span>Red flag</span><span>h = (max(0, max<sub>k</sub> Ã<sub>k</sub> − τ) / (1 − τ))², &nbsp;R = R<sub>0</sub> + κ h (1 − R<sub>0</sub>) = <b>{{ "%.1f"|format(r.objective) }}</b>/100 &nbsp;(τ = {{ p.tau }}, κ = {{ p.kappa }})</span></li>
+        <li><span>Concern</span><span>ρ(t) = {{ p.a }} + {{ p.b }} t = {{ "%.2f"|format(k.rho) }} (t = {{ "%.2f"|format(k.t) }}); &nbsp;C = 100 [σ(k(R − ρ)) − σ(−kρ)] / [σ(k(1 − ρ)) − σ(−kρ)] = <b>{{ "%.1f"|format(r.score) }}</b>, &nbsp;k = {{ p.k }}</span></li>
+        <li><span>Verdict</span><span>clear if R ≤ 100 ρ(t) = {{ r.verdict.tolerance }} and no broken profile limit; t from risk level 1→5: low, low-moderate, moderate, moderate-high, high</span></li>
+        <li><span>What-if</span><span>E<sub>s</sub> = Σ<sub>c</sub> X<sub>c</sub> · 1[country directly involved in s] &nbsp;(not in the score)</span></li>
+      </ol>
+      <p class="small">The same formula scores each holding (its own w<sub>ic</sub> and f<sub>i</sub>) and each country (its own M<sub>c</sub> and g<sub>c</sub>, no company term), so the risk columns of the holdings and countries tables are comparable with the headline objective risk.</p>
+
+      <h3 class="sub">What each agent extracts</h3>
+      <table class="data inputs">
+        <thead><tr><th>Agent</th><th>Information</th><th>Formula term</th><th>Status</th></tr></thead>
+        <tbody>
+          {% for i in k.inputs %}
+          <tr class="{{ i.status }}"><td class="small">{{ i.agent }}</td><td>{{ i.field }}</td><td class="mono small">{{ i.term }}</td>
+            <td class="small"><span class="tag tag-{{ i.status }}">{{ {"used": "in formula", "context": "shown, not scored", "candidate": "candidate"}[i.status] }}</span></td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </section>

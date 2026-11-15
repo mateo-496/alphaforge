@@ -1,27 +1,28 @@
 """The 10 sample portfolios (examples/portfolios.json), mapped onto the form's fields."""
 from functools import lru_cache
 
-from core.sample_portfolios import load
 from web import universe as U
 
-RISK = {"low": "low", "low-moderate": "low_moderate", "moderate": "moderate", "moderate-high": "high", "high": "high"}
-OBJECTIVE = {"growth": "growth", "balanced": "balanced", "income": "balanced", "inflation hedge": "balanced",
-             "preserve real value": "preserve", "capital preservation": "preserve"}
+RISK = {"low": 1, "low-moderate": 2, "moderate": 3, "moderate-high": 4, "high": 5}
+OBJECTIVE = {"capital preservation": 1, "preserve real value": 1, "income": 2, "inflation hedge": 3,
+             "balanced": 3, "growth": 4}
+THEMES = {"fossil_fuels": "theme:Fossil fuels", "weapons": "theme:Weapons and defence",
+          "sanctioned_jurisdictions": "theme:Sanctioned jurisdictions"}
 
 
 def _profile(p: dict) -> dict:
     pr = p["profile"]
     excl = pr.get("exclusions", [])
-    return {"age": None, "horizon_years": pr.get("horizon_years", 10),
-            "risk_tolerance": RISK.get(pr.get("risk_tolerance"), "moderate"),
-            "objective": OBJECTIVE.get(pr.get("objective"), "balanced"),
+    return {"age": None, "horizon_years": min(pr.get("horizon_years", 10), 30),
+            "risk_level": RISK.get(pr.get("risk_tolerance"), 3),
+            "objective_level": OBJECTIVE.get(pr.get("objective"), 3),
             "experience": "advanced" if "institutional" in pr.get("persona", "") or "manager" in pr.get("persona", "").lower() else "intermediate",
-            "esg_importance": "high" if excl else "none", "avoid_controversies": bool(excl),
+            "esg_importance": "high" if excl else "none",
             "crypto_max": 0.05 if any(h["ticker"] == "BTC" for h in p["holdings"]) else 0.0,
             "max_single_weight": pr.get("max_single_holding", 0.25),
-            "excluded_sectors": ["Energy"] if "fossil_fuels" in excl else [],
-            "excluded_tickers": [], "avoid_countries": [c for c, cap in pr.get("max_country", {}).items() if cap == 0],
-            "interests": ["dividends"] if pr.get("objective") == "income" else [],
+            "exclusions": [THEMES.get(e, f"text:{e}") for e in excl],
+            "avoid_countries": [c for c, cap in pr.get("max_country", {}).items() if cap == 0],
+            "interests": ["Dividend income"] if pr.get("objective") == "income" else [],
             "notes": f"{pr.get('persona', '')}. {p.get('geo_angle', '')}".strip(),
             "base_currency": pr.get("base_currency", "CAD")}
 
@@ -29,7 +30,7 @@ def _profile(p: dict) -> dict:
 @lru_cache
 def samples() -> dict[str, dict]:
     out = {}
-    for p in load()["portfolios"]:
+    for p in U.load()["portfolios"]:
         rows = []
         for h in p["holdings"]:
             t = U.normalise_ticker(h["ticker"]) or h["ticker"]

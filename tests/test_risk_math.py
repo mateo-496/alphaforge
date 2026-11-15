@@ -1,101 +1,35 @@
-"""Tests for the three deterministic agent scoring functions in tools/risk_math.py.
+from tools.risk_math import portfolio_risk, ticker_risk
 
-Covers:
-  - score_filings: firm_score, confidence, edge cases
-  - score_geopolitical: R, confidence, edge cases
-  - q_bar_weighted: channel weighting math
-  - Determinism: identical inputs → identical outputs
-  - Boundary conditions: empty claims, single claim, all channels
-  - Channel weight amplification: high-weight channels raise the score
-  - AgentOutput integration: scores reach portfolio_score.py correctly
-"""
-import math
+
+def test_ticker_risk():
+    assert ticker_risk({"CHN": 0.5}, {"CHN": 80}) == 40
+
+
+def test_portfolio_risk():
+    assert portfolio_risk({"A": 0.5, "B": 0.5}, {"A": 80, "B": 20}) == 50
+
+
 import pytest
 
-from core.schemas import AgentOutput, Claim, Entity
-from tools.risk_math import (
-    FILINGS_CHANNEL_WEIGHTS,
-    GEO_CHANNEL_WEIGHTS,
-    q_bar,
-    q_bar_weighted,
-    score_filings,
-    score_geopolitical,
-)
+from core.schemas import Claim
+from tools import risk_math as rm
 
 
-# ── helpers ──────────────────────────────────────────────────────────────────
-
-def _make_claim(channel="trade_tariffs", score=3, confidence=0.8) -> Claim:
-    return Claim(
-        id=f"test:{channel}:001",
-        channel=channel,
-        statement="Test claim.",
-        score=score,
-        confidence=confidence,
-        value=None,
-        unit=None,
-        evidence_quote=None,
-        quote_verified=None,
-        sources=[],
-    )
+def claim(score, confidence):
+    return Claim(id="a:T:001", channel="filing_risk", statement="s", score=score, confidence=confidence)
 
 
-def _make_output(agent="filings", ticker="NVDA", claims=None) -> AgentOutput:
-    return AgentOutput(
-        agent=agent,
-        entity=Entity(ticker=ticker, country=None),
-        as_of="2026-01-01",
-        claims=claims or [],
-        summary="Test output.",
-    )
+def test_percentile_rank_is_bounded_and_none_without_history():
+    assert rm.percentile_rank(5, [1, 2, 3, 4]) == 1.0
+    assert rm.percentile_rank(0, [1, 2, 3, 4]) == 0.0
+    assert rm.percentile_rank(2, [1, 2, 3, 4]) == 0.5
+    assert rm.percentile_rank(1, []) is None
 
 
-# ── q_bar_weighted ─────────────────────────────────────────────────────────
-
-class TestQBarWeighted:
-    def test_empty_returns_zero(self):
-        assert q_bar_weighted([]) == 0.0
-
-    def test_single_claim_no_weights(self):
-        c = _make_claim(score=4, confidence=1.0)
-        assert q_bar_weighted([c]) == 4.0
-
-    def test_matches_q_bar_without_weights(self):
-        """q_bar_weighted with no channel_weights must equal q_bar."""
-        claims = [_make_claim("trade_tariffs", 3, 0.9), _make_claim("sanctions", 5, 0.6)]
-        assert math.isclose(q_bar_weighted(claims), q_bar(claims), rel_tol=1e-9)
-
-    def test_high_weight_channel_raises_score(self):
-        """A claim on a high-weight channel should produce a higher score than one on a low-weight channel
-        when the high-weight claim has the same score and confidence."""
-        low_ch = _make_claim("financial_stress", score=3, confidence=1.0)   # weight 0.9
-        high_ch = _make_claim("export_controls", score=3, confidence=1.0)   # weight 1.4
-        # With a mix: high-weight pulls the weighted mean toward its score
-        low_other = _make_claim("financial_stress", score=1, confidence=1.0)
-        high_other = _make_claim("export_controls", score=1, confidence=1.0)
-        s_low  = q_bar_weighted([low_ch, low_other], FILINGS_CHANNEL_WEIGHTS)
-        s_high = q_bar_weighted([high_ch, high_other], FILINGS_CHANNEL_WEIGHTS)
-        assert math.isclose(s_low, s_high, rel_tol=1e-9)  # same scores → same result regardless of channel
-
-    def test_zero_confidence_claim_excluded(self):
-        """A claim with confidence=0 contributes 0 weight and doesn't affect the score."""
-        c_good = _make_claim(score=5, confidence=1.0)
-        c_zero = _make_claim(score=0, confidence=0.0)
-        result = q_bar_weighted([c_good, c_zero])
-        assert math.isclose(result, 5.0, rel_tol=1e-9)
-
-    def test_range(self):
-        """Output is always in [0, 5]."""
-        import random
-        random.seed(0)
-        channels = list(FILINGS_CHANNEL_WEIGHTS)
-        for _ in range(200):
-            claims = [
-                _make_claim(random.choice(channels), random.randint(0, 5), random.random())
-                for _ in range(random.randint(1, 10))
-            ]
-            val = q_bar_weighted(claims, FILINGS_CHANNEL_WEIGHTS)
-            assert 0.0 <= val <= 5.0, f"Out of range: {val}"
+def test_claim_quality_is_confidence_weighted():
+    assert rm.claim_quality([claim(5, 1.0), claim(0, 1.0)]) == 0.5
+    assert rm.claim_quality([claim(5, 0.9), claim(0, 0.1)]) == pytest.approx(0.9)
+    assert rm.claim_quality([]) is None
 
 
 # ── score_filings ─────────────────────────────────────────────────────────
@@ -309,12 +243,51 @@ class TestAgentOutputIntegration:
         )
         assert 0.0 <= a3 <= 1.0
         assert tol == 0.20  # "low" tolerance
+def test_country_risk_renormalises_missing_components_instead_of_counting_zero():
+    score, contrib = rm.country_risk(0.8, None, 0.4, [])
+    assert score == pytest.approx(0.6)
+    assert set(contrib) == {"gpr", "vol"} and sum(contrib.values()) == pytest.approx(score)
+    with pytest.raises(ValueError):
+        rm.country_risk(None, None, None, [])
+    with pytest.raises(ValueError):
+        rm.country_risk(1.2, 0.5, 0.5, [])
 
 
-# ── Existing q_bar still works ────────────────────────────────────────────────
+def test_asset_risk_unknown_share_uses_mean_country_risk_not_zero():
+    score, contrib, per_country = rm.asset_risk({"CN": 0.5}, {"CN": 0.8, "US": 0.2},
+                                                weights={"exposure": 1, "filing": 0, "market": 0})
+    assert per_country == {"CN": pytest.approx(0.4), "Other": pytest.approx(0.25)}  # mean R = 0.5
+    assert score == pytest.approx(0.65)
 
-def test_q_bar_unchanged():
-    """The original q_bar function still works correctly."""
-    from tools.risk_math import q_bar
-    claims = [_make_claim("trade_tariffs", 4, 0.5), _make_claim("sanctions", 2, 0.5)]
-    assert math.isclose(q_bar(claims), 3.0, rel_tol=1e-9)
+
+def test_asset_risk_blends_filing_and_market_and_contributions_sum_to_score():
+    score, contrib, _ = rm.asset_risk({"CN": 1.0}, {"CN": 0.6}, filing=0.3, market=0.9)
+    assert score == pytest.approx((0.6 + 0.3 + 0.9) / 3)
+    assert sum(contrib.values()) == pytest.approx(score)
+    score, contrib, _ = rm.asset_risk({"CN": 1.0}, {"CN": 0.6}, filing=0.3)
+    assert score == pytest.approx(0.45) and set(contrib) == {"exposure", "filing"}
+
+
+def test_portfolio_scores_and_validation():
+    total, contrib = rm.portfolio_scores({"A": 0.5, "B": 0.5}, {"A": 0.8, "B": 0.2})
+    assert total == pytest.approx(0.5) and contrib == {"A": pytest.approx(0.4), "B": pytest.approx(0.1)}
+    with pytest.raises(ValueError):
+        rm.portfolio_scores({"A": 0.5}, {"A": 0.5})
+
+
+def test_scenario_shock_is_bounded_by_likelihood():
+    shock = rm.scenario_shock({"A": 0.5, "B": 0.5}, {"A": {"TW": 1.0}, "B": {"US": 1.0}}, {"TW": 1.0}, 0.2)
+    assert shock == pytest.approx(0.1)
+    assert rm.scenario_shock({"A": 1.0}, {"A": {"TW": 1.0}}, {"TW": 1.0}, 0.2) == pytest.approx(0.2)
+    with pytest.raises(ValueError):
+        rm.scenario_shock({"A": 1.0}, {"A": {"TW": 1.0}}, {"TW": 2.0}, 0.2)
+
+
+def test_ranking_stability_detects_weight_dependence():
+    values = {"A": {"x": 0.9, "y": 0.1}, "B": {"x": 0.1, "y": 0.9}}
+
+    def score(weights):
+        return {k: sum(weights[c] * v for c, v in comps.items()) for k, comps in values.items()}
+    assert rm.ranking_stability(score, {"x": 0.5, "y": 0.5}) < 1.0
+    values = {"A": {"x": 0.9, "y": 0.8}, "B": {"x": 0.1, "y": 0.2}}
+    assert rm.ranking_stability(score, {"x": 0.5, "y": 0.5}) == 1.0

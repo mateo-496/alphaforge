@@ -1,24 +1,32 @@
 <div class="result">
+  {% set ax = annexes(r) %}
   <section class="headline">
     <div class="score">
       <span class="score-num mono">{{ "%.0f"|format(r.score) }}</span><span class="score-of">/100</span>
-      <span class="score-level level-{{ r.level }}">{{ r.level|capitalize }}</span>
-      {% if r.objective_score is defined %}
-      <div class="score-sub small muted" style="margin-top: 6px; font-size: 13px; color: var(--muted, #666); flex-basis: 100%;">
-        Objective Risk: {{ "%.0f"|format(r.objective_score) }}/100 &middot; Confidence: {{ "%.0f"|format(r.confidence * 100) }}%
-      </div>
-      {% endif %}
+      <span class="score-level level-{{ r.level|replace(' ', '-') }}">{{ r.level|capitalize }}</span>
+      <div class="score-sub small muted">Concern for this profile · objective risk {{ "%.0f"|format(r.objective) }} · confidence {{ "%.0f"|format(r.confidence * 100) }}%</div>
     </div>
     <div class="summary">
-      {% for s in r.summary %}<p>{{ s }}</p>{% endfor %}
-      {% if r.mock %}<p class="mock-note">Company exposures and country risk are placeholders until those agents are connected.</p>{% endif %}
+      <dl class="summary-points">
+        {% for s in r.summary %}{% if s is mapping %}<dt>{{ s.title }}</dt><dd>{{ s.text }}</dd>{% else %}<dd class="solo">{{ s }}</dd>{% endif %}{% endfor %}
+      </dl>
+      <p class="source-note">{% if r.summary_by == "risk agent" %}<span class="ai-tag">AI-generated</span> Every number is checked against the computed figures.{% else %}Built from the computed figures.{% endif %}
+        {% if r.n_estimated %}{{ r.n_estimated }} of {{ r.by_holding|length }} holdings have no filing-based country split and use an estimate.{% endif %}</p>
     </div>
+  </section>
+
+  {% set v = r.verdict %}
+  <section class="verdict verdict-{{ v.status }}">
+    <p class="verdict-title">{% if v.status == "clear" %}No immediate danger{% else %}Changes suggested{% endif %}</p>
+    <p class="verdict-text">{% if v.status == "clear" %}Every test passes for this profile. Nothing needs to change; run the analysis again if the scenarios or the countries move.
+      {% else %}At least one test fails. The recommendations below fix it within the profile's limits.{% endif %}</p>
+    <ul class="tests">{% for t in v.tests %}<li class="{{ 'ok' if t.ok else 'fail' }}"><span class="mark">{{ "✓" if t.ok else "✕" }}</span>{{ t.name }}<span class="mono">{{ t.value }}</span></li>{% endfor %}</ul>
   </section>
 
   {% if r.checks %}
   <section class="block coll">
     <div class="block-head"><span class="block-no">01</span><h2><button type="button" class="block-toggle" aria-expanded="true">Conflicts with the profile<i class="chev"></i></button></h2>
-      <p>Stated limits the portfolio already breaks, before any geopolitical shock.</p></div>
+      <p>Stated limits and preferences the portfolio already breaks, before any geopolitical shock.</p></div>
     <div class="block-body">
       <ol class="checks-list">{% for c in r.checks %}<li>{{ c.text }}</li>{% endfor %}</ol>
     </div>
@@ -26,78 +34,159 @@
   {% endif %}
 
   <section class="block coll">
-    <div class="block-head"><span class="block-no">02</span><h2><button type="button" class="block-toggle" aria-expanded="true">Where the risk comes from<i class="chev"></i></button></h2>
-      <p>Each holding's risk combines the political risk of the countries it earns revenue in and its own filing disclosures. The tick marks its weight.</p></div>
+    <div class="block-head"><span class="block-no">02</span><h2><button type="button" class="block-toggle" aria-expanded="true">Risk per holding<i class="chev"></i></button></h2>
+      <p>Each holding scored on its own with the same formula as the portfolio. Exposure is where its country split comes from (hover for details). The bar is its share of the weight × risk total; the tick marks its weight.</p></div>
     <div class="block-body">
       <table class="data">
-        <thead><tr><th>Ticker</th><th>Name</th><th class="num">Weight</th><th class="num">Risk</th><th class="share-col">Share of portfolio risk</th></tr></thead>
+        <thead><tr><th>Ticker</th><th>Name</th><th class="num">Weight</th><th class="num" title="Objective risk, 0-100">Risk</th><th>Exposure</th><th class="share-col">Share of weight × risk</th></tr></thead>
         <tbody>
-          {% set maxc = r.by_holding[0].contribution %}
+          {% set maxc = r.by_holding[0].share or 1 %}
           {% for h in r.by_holding %}
-          <tr class="{% if h.contribution > h.weight * 1.2 %}flag{% endif %}{% if loop.index > 5 %} more{% endif %}">
+          <tr class="{% if h.share > h.weight * 1.2 %}flag{% endif %}{% if loop.index > 5 %} more{% endif %}">
             <td class="mono">{{ h.ticker }}</td><td>{{ h.name }}</td>
             <td class="num mono">{{ "%.1f"|format(h.weight * 100) }}%</td>
-            <td class="num mono">{{ "%.0f"|format(h.G) }}</td>
-            <td class="share-col"><span class="share"><span class="bar" style="width: {{ (h.contribution / maxc * 100)|round(1) }}%"></span><i class="tick" style="left: {{ (h.weight / maxc * 100)|round(1) if h.weight < maxc else 100 }}%"></i></span><span class="mono share-num">{{ "%.0f"|format(h.contribution * 100) }}%</span></td>
+            <td class="num mono{% if h.R >= 60 %} hot{% endif %}">{{ "%.0f"|format(h.R) }}</td>
+            <td class="small expo">{% set L = ax.by_url.get(h.source_url) %}{% set code = h.tier.code if h.tier else "none" %}<span{% if h.estimated %} class="muted"{% endif %} title="{{ h.method }}">{{ {"xbrl": "SEC table", "text": "Filing text", "stale": "Last year's filing", "sector_prior": "Sector peers", "home_bias": "Home bias", "domestic": "Domestic", "returns": "Returns-based", "recorded": "Fund countries", "none": "—"}.get(code, code) }}</span>{% if L %}<a class="annex-ref mono" href="#annex-{{ L }}">{{ L }}</a>{% endif %}</td>
+            <td class="share-col"><span class="share"><span class="bar" style="width: {{ (h.share / maxc * 100)|round(1) }}%"></span><i class="tick" style="left: {{ (h.weight / maxc * 100)|round(1) if h.weight < maxc else 100 }}%"></i></span><span class="mono share-num">{{ "%.0f"|format(h.share * 100) }}%</span></td>
           </tr>
           {% endfor %}
         </tbody>
       </table>
       {% if r.by_holding|length > 5 %}<button type="button" class="show-more" data-more>Show all {{ r.by_holding|length }} holdings<i class="chev"></i></button>{% endif %}
+      {% set es = r.exposure_status or {} %}
+      {% if es %}<p class="annex-note small">SEC lookup per holding:
+        {% for k, n in es|dictsort %}{{ n }} {{ {"available": "with a geographic table", "blocked": "refused by EDGAR (check SEC_IDENTITY / request rate)", "error": "failed", "no_sec_ticker": "not SEC filers", "no_annual_filing": "without an annual filing by the analysis date", "no_country_revenue_found": "without a geographic table", "unsupported_fiscal_year_order": "with an unreadable table", "not_applicable": "funds, gold or crypto"}.get(k, k) }}{% if not loop.last %} · {% endif %}{% endfor %}.</p>{% endif %}
     </div>
   </section>
+
 
   <section class="block coll">
     <div class="block-head"><span class="block-no">03</span><h2><button type="button" class="block-toggle" aria-expanded="true">Countries<i class="chev"></i></button></h2>
-      <p>Share of portfolio revenue earned in each country, and that country's political risk on the analysis date.</p></div>
+      <p>Share of portfolio revenue earned in each country, its GPR percentile (how its geopolitical risk index on the analysis date ranks among its own past months), and the country's risk under the same formula. Hover a driver for the full text.</p></div>
     <div class="block-body">
+      {% set gL = ax.by_url.get(r.country_meta.gpr.url) if r.country_meta and r.country_meta.gpr else None %}
       <table class="data">
-        <thead><tr><th>Country</th><th class="num">Exposure</th><th class="num">Risk</th><th>Main driver</th><th>Through</th></tr></thead>
+        <thead><tr><th>Country</th><th class="num">Revenue</th><th class="num" title="GPR percentile vs. own history">GPR{% if gL %}<a class="annex-ref mono" href="#annex-{{ gL }}">{{ gL }}</a>{% endif %}</th><th class="num">Risk</th><th>Driver</th><th>Through</th></tr></thead>
         <tbody>
           {% for c in r.by_country %}
-          <tr{% if loop.index > 5 %} class="more"{% endif %}><td>{{ c.name }}</td><td class="num mono">{{ "%.1f"|format(c.X * 100) }}%</td>
-            <td class="num mono{% if c.R >= 60 %} hot{% endif %}">{{ c.R }}</td>
-            <td class="muted">{{ c.driver }}</td><td class="mono small">{{ c.holdings|join(", ") }}</td></tr>
+          <tr{% if loop.index > 5 %} class="more"{% endif %}><td>{{ c.name }}{% if c.proxy %} <span class="muted small" title="No country index: global GPR used">global</span>{% endif %}</td><td class="num mono">{{ "%.1f"|format(c.X * 100) }}%</td>
+            <td class="num mono{% if c.g and c.g >= 0.8 %} hot{% endif %}" title="{{ c.method }}">{{ "%.0f"|format(c.g * 100) if c.g is not none else "—" }}</td>
+            <td class="num mono{% if c.R >= 60 %} hot{% endif %}">{{ "%.0f"|format(c.R) }}</td>
+            <td class="muted driver" title="{{ c.driver }}">{{ short_driver(c.driver) }}</td><td class="mono small through" title="{{ c.holdings|join(', ') }}">{{ c.holdings[:6]|join(", ") }}{% if c.holdings|length > 6 %} +{{ c.holdings|length - 6 }}{% endif %}</td></tr>
           {% endfor %}
         </tbody>
       </table>
+      {% if r.unattributed > 0.005 %}<p class="annex-note small">{{ "%.1f"|format(r.unattributed * 100) }}% of portfolio revenue is not attributed to a country; it lowers the confidence of the national and geopolitical inputs instead of being guessed.</p>{% endif %}
       {% if r.by_country|length > 5 %}<button type="button" class="show-more" data-more>Show all {{ r.by_country|length }} countries<i class="chev"></i></button>{% endif %}
+      {% if r.country_meta and r.country_meta.error %}<p class="flag-note">{{ r.country_meta.error }}</p>{% endif %}
+
+      {% if r.gpr_claims %}
+      <details class="sub-details">
+      <summary><h3 class="sub">What the GPR index shows</h3></summary>
+      {% for c, g in r.gpr_claims.items() %}
+      <details class="nest">
+        <summary><span class="nest-title">{{ names.get(c, c) }}</span>
+          <span class="muted small">{% if g.error %}unavailable{% else %}{{ g.claims|length }} claim{{ "s" if g.claims|length != 1 }}{% endif %}</span></summary>
+        {% if g.error %}<p class="muted small">{{ g.error }}</p>{% endif %}
+        {% for x in g.claims %}
+        <details class="nest claim">
+          <summary>{{ x.statement }}</summary>
+          <p class="quote" title="{{ x.sources[0].locator if x.sources else '' }}">{{ x.evidence_quote }}</p>
+          <p class="muted small">Quote found word for word in the GPR index data.</p>
+        </details>
+        {% endfor %}
+      </details>
+      {% endfor %}
+      </details>
+      {% endif %}
+
+      {% if r.macro and r.macro.countries %}
+      <details class="sub-details">
+      <summary><h3 class="sub">Macro and banking context</h3></summary>
+      <table class="data macro">
+        <thead><tr><th>Country</th><th class="num" title="tools/risk_calculator, 0 = lower risk">Macro</th><th class="num">GDP growth</th><th class="num">Inflation</th><th class="num">Debt/GDP</th><th class="num">Bank NPL</th><th>Note</th><th>Official sources</th></tr></thead>
+        <tbody>
+          {% for c in (r.macro.top or r.macro.countries.keys()|list)[:8] %}{% set m = r.macro.countries[c] %}{% set i = m.indicators %}
+          <tr><td>{{ names.get(c, c) }}</td>
+            <td class="num mono" title="{{ m.macro.label if m.macro else '' }}{% if m.macro %} · {{ m.macro.coverage_pct }}% of weights covered{% endif %}">{{ "%.0f"|format(m.macro.score) if m.macro else "—" }}</td>
+            {% for k in ["gdp_growth_pct", "inflation_pct", "public_debt_pct_gdp", "nonperforming_loans_pct"] %}
+            <td class="num mono">{% if i[k] %}<span title="{{ i[k].label }}, {{ i[k].year }}">{{ "%.1f"|format(i[k].value) }}</span>{% else %}—{% endif %}</td>
+            {% endfor %}
+            <td class="muted driver">{{ m.note }}</td>
+            <td class="small">{% for s in m.sources %}<a href="{{ s.url }}" target="_blank" rel="noopener"{% if s.checked is false %} title="Not reachable from the server when checked"{% endif %}>{{ s.name }}</a>{% if not loop.last %} · {% endif %}{% else %}<span class="muted">none reachable</span>{% endfor %}</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+      <p class="annex-note small">Latest World Bank value published before the analysis date (hover for the year){% set L = ax.by_url.get("https://data.worldbank.org/indicator/NY.GDP.MKTP.KD.ZG") %}{% if L %}<a class="annex-ref mono" href="#annex-{{ L }}">{{ L }}</a>{% endif %}.
+        Official sources come from the source agent: curated institutions, each checked to be reachable; they were not read for this report.
+        {% if r.macro.meta.error %}Notes: {{ r.macro.meta.error }}; factual lines shown.{% endif %}</p>
+      </details>
+      {% endif %}
     </div>
   </section>
 
+
+  {% if r.signposts %}
   <section class="block coll">
-    <div class="block-head"><span class="block-no">04</span><h2><button type="button" class="block-toggle" aria-expanded="true">Five events to watch<i class="chev"></i></button></h2>
-      <p>Upcoming dated events ranked by exposure × severity × likelihood, discounted by how far away they are.</p></div>
+    <div class="block-head"><span class="block-no">04</span><h2><button type="button" class="block-toggle" aria-expanded="true">Signposts to watch<i class="chev"></i></button></h2>
+      <p>Early warnings of the scenarios with the most portfolio revenue in directly involved countries.</p></div>
     <div class="block-body">
-      <ol class="watch">
-        {% for e in r.watchlist %}
-        <li>
-          <span class="watch-date mono">{{ e.date }}</span>
-          <span class="watch-title">{{ e.title }}</span>
-          <span class="watch-meta">{{ e.channel|replace("_", " ") }} · severity {{ e.severity }}/5 · likelihood {{ "%.0f"|format(e.likelihood * 100) }}% · <span class="mono">{{ e.holdings|join(", ") }}</span></span>
-        </li>
-        {% endfor %}
-      </ol>
-    </div>
-  </section>
-
-  {% include "_scenarios.html" %}
-
-  {% if r.whatifs %}
-  <section class="block coll collapsed">
-    <div class="block-head"><span class="block-no">06</span><h2><button type="button" class="block-toggle" aria-expanded="false">What if<i class="chev"></i></button></h2>
-      <p>Hypothetical changes and their effect on the score. A simulation, not a recommendation.</p></div>
-    <div class="block-body">
-      <ul class="whatifs">
-        {% for w in r.whatifs %}
-        <li>Moving half of <b class="mono">{{ w.from }}</b> ({{ "%.1f"|format(w.move * 100) }}% of the portfolio) into <b class="mono">{{ w.to }}</b>
-          would change the score from {{ "%.0f"|format(r.score) }} to <b>{{ "%.0f"|format(w.score_after) }}</b>.
-          {% if w.ret_from is not none and w.ret_to is not none %}Over the year to {{ r.as_of }}, {{ w.from }} returned {{ "%+.0f"|format(w.ret_from * 100) }}% and {{ w.to }} {{ "%+.0f"|format(w.ret_to * 100) }}%.{% endif %}</li>
-        {% endfor %}
-      </ul>
+      <table class="data watch-table">
+        <thead><tr><th class="num">#</th><th class="num" title="Share of portfolio revenue in countries directly involved">Revenue at stake</th><th>Signpost</th><th>Holdings</th></tr></thead>
+        <tbody>
+          {% for e in r.signposts %}
+          <tr><td class="num mono muted">{{ loop.index }}</td>
+            <td class="num mono">{{ "%.0f"|format(e.exposure * 100) }}%</td>
+            <td>{{ e.text }}{% for ev in e.evidence[:2] %}{% set L = ax.by_url.get(ev.url) %}{% if L %}<a class="annex-ref mono" href="#annex-{{ L }}" title="“{{ ev.quote }}”">{{ L }}</a>{% endif %}{% endfor %}</td>
+            <td class="mono small through">{{ e.holdings[:6]|join(", ") }}{% if e.holdings|length > 6 %} +{{ e.holdings|length - 6 }}{% endif %}</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
     </div>
   </section>
   {% endif %}
+
+  {% include "_scenarios.html" %}
+
+  <section class="block coll" id="recommendations">
+    <div class="block-head"><span class="block-no">06</span><h2><button type="button" class="block-toggle" aria-expanded="true">Recommendations<i class="chev"></i></button></h2>
+      <p>Chosen by code{% if r.style %} for {{ r.style.why }}{% endif %}: broken limits first, then the riskiest holdings, in quarters, until the objective risk is under {{ "%g"|format(r.verdict.tolerance) }}. A simulation, not advice.</p></div>
+    <div class="block-body">
+      {% if r.remediation %}
+      <ol class="whatifs">
+        {% for w in r.remediation %}
+        <li>
+          <span class="swap mono">{{ w.from }} → {{ w.to }}</span> <span class="tag">{{ "profile limit" if w.kind == "profile" else "risk" }}</span>
+          Move {{ "%.0f"|format(w.fraction * 100) }}% of {{ w.from }} ({{ "%.1f"|format(w.move * 100) }}% of the portfolio) into {{ w.to }}:
+          objective risk {{ "%.0f"|format(w.score_before) }} → <b>{{ "%.0f"|format(w.score_after) }}</b>.
+          <span class="rationale">Why sell: {{ w.why_sell }}</span>
+          <span class="rationale">Why {{ w.to }}: {{ w.why_buy }}</span>
+          {% if w.ret_from is not none and w.ret_to is not none %}<span class="rationale muted">Past year: {{ w.from }} {{ "%+.0f"|format(w.ret_from * 100) }}%, {{ w.to }} {{ "%+.0f"|format(w.ret_to * 100) }}%.</span>{% endif %}
+        </li>
+        {% endfor %}
+      </ol>
+      {% set last = r.remediation[-1] %}
+      <p class="small">After all changes: objective risk {{ "%.0f"|format(r.objective) }} → <b>{{ "%.0f"|format(last.score_after) }}</b> (comfort level {{ r.verdict.tolerance }}).</p>
+      {% elif r.verdict.status == "clear" %}
+      <p><b>Nothing to change.</b> The objective risk is within the profile's comfort level and no stated limit is broken.</p>
+      {% else %}
+      <p class="muted">No fund the profile allows lowers the score enough to help.</p>
+      {% endif %}
+      {% if r.agent_swaps %}
+      <h3 class="sub">Alternatives from the remediation agent</h3>
+      <p class="small muted">Proposed by the agent, then checked by code: known tickers, profile-approved funds, each applied alone and kept only if the score goes down.</p>
+      <ol class="whatifs">
+        {% for w in r.agent_swaps %}
+        <li><span class="swap mono">{{ w.from }} → {{ w.to }}</span>
+          Move {{ "%.0f"|format(w.fraction * 100) }}% of {{ w.from }} ({{ "%.1f"|format(w.move * 100) }}% of the portfolio) into {{ w.to }}:
+          objective risk {{ "%.0f"|format(w.score_before) }} → <b>{{ "%.0f"|format(w.score_after) }}</b>.
+          <span class="rationale">{{ w.rationale }}</span></li>
+        {% endfor %}
+      </ol>
+      {% endif %}
+    </div>
+  </section>
+
 
   {% include "_annexes.html" %}
 </div>
