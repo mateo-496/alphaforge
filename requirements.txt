@@ -81,3 +81,8 @@ yarl==1.25.1
 python-dotenv==1.0.1
 yfinance==1.8.0
 edgar-geo-revenue==0.1.2
+edgartools==6.1.0
+numpy==2.5.4
+openpyxl==3.1.5
+pandas==3.0.6  # 3.1.1's join.pyd is blocked by Acronis Active Protection on this machine
+xlrd==2.0.2

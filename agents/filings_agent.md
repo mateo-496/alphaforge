@@ -22,10 +22,10 @@ configured model:
 
 Set `SEC_IDENTITY` to an application name and real contact email in the
 environment. This agent does not itself load `.env`. The filing tools require
-`edgartools` (`edgar`), which is not currently listed in `requirements.txt`.
+`edgartools` (`edgar`), declared in `requirements.txt`.
 
 ```powershell
-.\.venv\Scripts\python.exe -m pip install edgartools
+.\.venv\Scripts\python.exe -m pip install -r requirements.txt
 $env:SEC_IDENTITY = "Application name contact@your-domain.com"
 .\.venv\Scripts\python.exe -m agents.filings_agent NVDA --as-of 2025-06-30
 ```

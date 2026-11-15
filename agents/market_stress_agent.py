@@ -14,6 +14,7 @@ from strands import Agent
 load_dotenv()
 
 from agents.base import build_model
+from agents.mcp_client import call_tool as _call
 from core.citations import resolve_citations
 from core.market_stress import EnrichedPortfolio, Evaluations, MarketStressRequest, MarketStressResult
 from core.schemas import AgentOutput, Claim, Entity, Source
@@ -26,15 +27,6 @@ Scores are subjective assessments, not observed market data or validated investm
 Use only the supplied facts. Do not calculate or modify values, invent sources, or infer
 company or country stress from a global indicator. Consider the age and limitations of
 the data when estimating confidence."""
-
-
-async def _call(session: ClientSession, name: str, arguments: dict) -> dict:
-    result = await session.call_tool(name, arguments)
-    if result.is_error:
-        raise RuntimeError(f"MCP tool {name} failed: {result.content}")
-    if not isinstance(result.structured_content, dict):
-        raise ValueError(f"MCP tool {name} returned no structured object")
-    return result.structured_content
 
 
 async def collect(request: MarketStressRequest, as_of: date) -> tuple[list[dict], dict]:

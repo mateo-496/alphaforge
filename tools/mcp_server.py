@@ -6,7 +6,7 @@ from mcp.server.mcpserver import MCPServer
 
 load_dotenv()
 
-from tools import market_data, market_stress, portfolio_csv
+from tools import filings, filings_rag, market_data, market_stress, portfolio_csv
 from tools.market_cache import cached
 
 server = MCPServer("AlphaForge shared tools")
@@ -63,6 +63,36 @@ def decompose_portfolio(request: dict) -> dict[str, Any]:
 def convert_portfolio_csv(csv_text: str) -> dict[str, Any]:
     """Convert portfolio CSV text to a validated portfolio object."""
     return portfolio_csv.convert_portfolio_csv(csv_text)
+
+
+@server.tool(structured_output=True)
+def get_filing_risk_section(ticker: str, as_of: str) -> dict[str, Any]:
+    """Retrieve the annual filing's risk section or indicate that manual review is needed."""
+    return filings.get_filing_risk_section(ticker, as_of)
+
+
+@server.tool(structured_output=True)
+def verify_filing_risk_quotes(text: str, quotes: list[str]) -> dict[str, Any]:
+    """Check that each quotation occurs in a supplied risk-section excerpt."""
+    return filings.verify_filing_risk_quotes(text, quotes)
+
+
+@server.tool(structured_output=True)
+def index_annual_filings(tickers: list[str], as_of: str) -> dict[str, Any]:
+    """Archive annual filings in S3 and start Knowledge Base ingestion."""
+    return filings_rag.index_annual_filings(tickers, as_of)
+
+
+@server.tool(structured_output=True)
+def filing_index_status(ingestion_job_id: str) -> dict[str, Any]:
+    """Get the status of a Knowledge Base ingestion job."""
+    return filings_rag.filing_index_status(ingestion_job_id)
+
+
+@server.tool(structured_output=True)
+def search_indexed_filing(ticker: str, accession: str, query: str) -> dict[str, Any]:
+    """Retrieve verified passages from an indexed annual filing."""
+    return filings_rag.search_indexed_filing(ticker, accession, query)
 
 
 if __name__ == "__main__":
