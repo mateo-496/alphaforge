@@ -18,3 +18,6 @@ SCENARIO_MODEL_ID = os.environ.get("SCENARIO_MODEL_ID", BEDROCK_MODEL_ID)   # mo
 SUMMARY_MAX_CHARS = 350
 SCENARIO_MAX_AGE_DAYS = int(os.environ.get("SCENARIO_MAX_AGE_DAYS", "7"))   # regenerate after this
 SCENARIO_ALPHA = float(os.environ.get("SCENARIO_ALPHA", "0.35"))             # weight of the new run in the EMA
+# Geopolitical agent: S3 bucket/prefix holding research documents, optional Bedrock Knowledge Base over it.
+
+GEO_S3_BUCKET = "datathon-equipe-5-017820693871"
