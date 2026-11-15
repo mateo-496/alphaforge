@@ -17,8 +17,26 @@ except ImportError:
 ON_VERCEL = bool(os.environ.get("VERCEL"))
 BUNDLED_DATA = Path(__file__).resolve().parent.parent / "data"
 DATA_DIR = Path(os.environ.get("DATA_DIR") or ("/tmp/data" if ON_VERCEL else "data"))
+
+
+def _seed(src: Path, dst: Path) -> None:
+    """Copy the deployed data/ into the writable DATA_DIR: contents only. The deployed files are read-only and
+    copytree would copy that mode too, leaving DATA_DIR unwritable."""
+    for root, dirs, files in os.walk(src):
+        dirs[:] = [d for d in dirs if d != "traces"]
+        out = dst / Path(root).relative_to(src)
+        out.mkdir(parents=True, exist_ok=True)
+        for f in files:
+            if not f.endswith(".tmp"):
+                shutil.copyfile(Path(root) / f, out / f)
+
+
+if ON_VERCEL:   # libraries' own caches (edgartools, yfinance via platformdirs) go to the writable /tmp too
+    os.environ.setdefault("EDGAR_LOCAL_DATA_DIR", "/tmp/edgar")
+    os.environ.setdefault("XDG_CACHE_HOME", "/tmp/.cache")
 if ON_VERCEL and BUNDLED_DATA.is_dir() and not (DATA_DIR / ".seeded").exists():
-    shutil.copytree(BUNDLED_DATA, DATA_DIR, dirs_exist_ok=True, ignore=shutil.ignore_patterns("traces", "*.tmp"))
+    DATA_DIR.mkdir(parents=True, exist_ok=True)
+    _seed(BUNDLED_DATA, DATA_DIR)
     (DATA_DIR / ".seeded").touch()
 # A new analysis runs inside one streamed request (progress, then the report) instead of a background task polled by
 # the page: serverless instances do not share memory or disk, and may stop work once a response is sent.

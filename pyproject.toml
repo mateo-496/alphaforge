@@ -2,6 +2,25 @@
 name = "alphaforge"
 version = "0.2.0"
 requires-python = ">=3.12"
+dependencies = [   # runtime only, same pins as requirements.txt (Vercel installs from this file)
+    "boto3==1.44.3",
+    "pydantic==2.14.3",
+    "python-dotenv==1.0.1",
+    "httpx==0.28.1",
+    "beautifulsoup4==4.15.0",
+    "pandas==3.0.6",
+    "xlrd==2.0.2",
+    "yfinance==1.8.0",
+    "edgartools==6.1.0",
+    "edgar-geo-revenue==0.1.2",
+    "fastapi==0.163.0",
+    "uvicorn==0.54.0",
+    "jinja2==3.1.6",
+    "python-multipart==0.0.33",
+]
+
+[project.optional-dependencies]
+dev = ["pytest==9.2.0"]
 
 [tool.setuptools.packages.find]
 include = ["core*", "tools*", "agents*", "pipelines*", "web*"]
