@@ -5,7 +5,6 @@ Run locally:  uvicorn web.app:app --reload --port 8080   (from the repo root)
 import asyncio
 import json
 import logging
-import math
 from pathlib import Path
 
 from fastapi import FastAPI, File, Request, UploadFile
@@ -16,7 +15,7 @@ from pydantic import ValidationError
 
 from core import config
 from core.schemas import AnalysisRequest, Holding, InvestorProfile, Portfolio
-from web import pipeline, universe as U
+from web import pipeline, profile, universe as U
 from web.store import runs
 from web.samples import samples
 from web.personas import PERSONAS
@@ -61,9 +60,8 @@ tpl.env.globals["short_driver"] = short_driver
 _tasks: set = set()
 COUNTRY_NUM = {k: v["num"] for k, v in json.loads((HERE / "countries.json").read_text()).items() if v["num"]}
 
-RISK_LABELS = {1: "Very low", 2: "Low", 3: "Moderate", 4: "High", 5: "Very high"}
+RISK_LABELS = profile.RISK_LABELS
 OBJECTIVE_LABELS = {1: "Preserve capital", 2: "Income", 3: "Balanced", 4: "Growth", 5: "Maximum growth"}
-VOL_LIMIT = {1: 0.15, 2: 0.25, 3: 0.35, 4: 0.50, 5: None}  # our thresholds, annualised volatility
 
 
 def _ctx(**kw) -> dict:
@@ -71,6 +69,7 @@ def _ctx(**kw) -> dict:
             "samples": samples(), "scenario_countries": O.COUNTRIES, "risk_labels": RISK_LABELS,
             "objective_labels": OBJECTIVE_LABELS, "exclusion_options": O.exclusion_options(U.universe()),
             "country_options": O.country_options(), "interest_options": O.interest_options(),
+            "holding_options": [{"v": ticker, "l": f"{ticker} - {asset['name']}"} for ticker, asset in U.universe().items()],
             "window": U.WINDOW, "prices_ok": U.prices_available(), "names": pipeline.NAMES, **kw}
 
 
@@ -109,22 +108,6 @@ def example(request: Request, persona: str):
 def template_csv():
     return PlainTextResponse("ticker,weight\nNVDA,25\nRY.TO,15\nXBB.TO,20\nJNJ,10\nSPY,30\n",
                              headers={"Content-Disposition": "attachment; filename=portfolio_template.csv"})
-
-
-def _vol_1y(ticker: str, as_of: str) -> float | None:
-    s = U._series()
-    if not s or ticker not in s[0]:
-        return None
-    dates, closes = s[0][ticker]
-    end = U.bisect_right(dates, as_of)
-    window = closes[max(0, end - 253):end]
-    if len(window) < 60:
-        return None
-    rets = [math.log(b / a) for a, b in zip(window, window[1:]) if a > 0]
-    m = sum(rets) / len(rets)
-    sd = math.sqrt(sum((r - m) ** 2 for r in rets) / (len(rets) - 1))
-    per_year = 365 if U.universe()[ticker]["asset_class"] == "crypto" else 252
-    return sd * math.sqrt(per_year)
 
 
 def build_request(form) -> tuple[AnalysisRequest | None, list[str], list[str]]:
@@ -187,6 +170,9 @@ def build_request(form) -> tuple[AnalysisRequest | None, list[str], list[str]]:
             t = U.normalise_ticker(val) if kind == "text" else None   # a typed ticker is a ticker
             (tickers if t else themes).append(t or val)
     esg = {"0": "none", "1": "some", "2": "high"}.get(form.get("esg", "0"), "none")
+    protected_holdings = form.getlist("protected_holdings")
+    if any(ticker not in amounts or amounts[ticker] <= 0 for ticker in protected_holdings):
+        errors.append("Holdings to keep must be in the portfolio.")
     try:
         profile = InvestorProfile(
             persona=form.get("persona") or None,
@@ -197,6 +183,8 @@ def build_request(form) -> tuple[AnalysisRequest | None, list[str], list[str]]:
             experience={"1": "beginner", "2": "intermediate", "3": "advanced"}.get(form.get("experience", "2"), "intermediate"),
             esg_importance=esg, avoid_controversies=esg == "high",
             crypto_max=pct("crypto_max", 0), max_single_weight=pct("max_single_weight", 25),
+            protected_holdings=protected_holdings, max_turnover=pct("max_turnover", 100),
+            replacement_types=form.getlist("replacement_types") or None,
             excluded_sectors=sectors, excluded_themes=themes, excluded_tickers=tickers,
             avoid_countries=[c for c in form.getlist("avoid_countries") if c in dict(O.COUNTRIES)],
             interests=[i.strip()[:60] for i in form.getlist("interests") if i.strip()][:20],
@@ -215,35 +203,8 @@ def build_request(form) -> tuple[AnalysisRequest | None, list[str], list[str]]:
 
 def profile_checks(req: AnalysisRequest) -> list[dict]:
     """Hard-constraint checks of the portfolio against the stated profile (deterministic)."""
-    p, u, out = req.profile, U.universe(), []
-    w = {h.ticker: h.weight for h in req.portfolio.holdings}
-    for t, x in w.items():  # diversified funds (ETFs) are exempt from the single-holding limit
-        if not u[t]["asset_class"].startswith("etf") and x > p.max_single_weight + 1e-9:
-            out.append({"ticker": t, "text": f"{t} is {x:.0%} of the portfolio, above the "
-                                              f"{p.max_single_weight:.0%} single-holding limit."})
-    crypto = sum(x for t, x in w.items() if u[t]["asset_class"] == "crypto")
-    if crypto > p.crypto_max + 1e-9:
-        out.append({"ticker": "crypto", "text": f"Crypto is {crypto:.0%} of the portfolio; the limit is {p.crypto_max:.0%}."})
-    themes = {x.lower() for x in p.excluded_themes}
-    fossil = {"fossil fuels", "coal", "oil sands"} & themes
-    for t in w:
-        if u[t]["sector"] and u[t]["sector"] in p.excluded_sectors:
-            out.append({"ticker": t, "text": f"{t} is in an excluded sector ({u[t]['sector']})."})
-        if t in p.excluded_tickers:
-            out.append({"ticker": t, "text": f"{t} is on the exclusion list."})
-        if fossil and u[t]["sector"] == "Energy":
-            out.append({"ticker": t, "text": f"{t} is an energy company; the profile excludes {', '.join(sorted(fossil))}."})
-    if "crypto assets" in themes and crypto > 0:
-        out.append({"ticker": "crypto", "text": f"Crypto assets are excluded but make up {crypto:.0%} of the portfolio."})
-    limit = VOL_LIMIT[p.risk_level]
-    if limit:
-        for t in w:
-            v = _vol_1y(t, req.as_of)
-            if v and v > limit:
-                out.append({"ticker": t, "text": f"{t} had {v:.0%} annualised volatility over the year to "
-                                                  f"{req.as_of}, above {limit:.0%} for a "
-                                                  f"{RISK_LABELS[p.risk_level].lower()} risk profile."})
-    return out
+    weights = {holding.ticker: holding.weight for holding in req.portfolio.holdings}
+    return profile.checks(req.profile.model_dump(), weights, U.universe(), req.as_of)
 
 
 @app.post("/runs")

@@ -105,7 +105,8 @@
     }
     function render() {
       const q = input.value.trim().toLowerCase(), have = new Set(values());
-      shown = opts.filter(o => !have.has(o.v) && (!q || o.l.toLowerCase().includes(q) || (o.g || "").toLowerCase().startsWith(q))).slice(0, 60);
+      const holdings = name === "protected_holdings" ? new Set($$("input[name=ticker]", form).map(i => resolve(i.value)).filter(Boolean)) : null;
+      shown = opts.filter(o => (!holdings || holdings.has(o.v)) && !have.has(o.v) && (!q || o.l.toLowerCase().includes(q) || (o.g || "").toLowerCase().startsWith(q))).slice(0, 60);
       let html = "", g = null;
       shown.forEach((o, i) => {
         if (o.g && o.g !== g) { g = o.g; html += `<li class="tag-group" aria-hidden="true">${g}</li>`; }
@@ -157,7 +158,7 @@
   };
   const DEFAULTS = { age: "", horizon_years: 10, risk_level: 3, objective_level: 3, experience: "intermediate",
     esg_importance: "none", crypto_max: 0, max_single_weight: 0.25, exclusions: [], avoid_countries: [],
-    interests: [], notes: "", base_currency: null };
+    protected_holdings: [], max_turnover: 1, replacement_types: [], interests: [], notes: "", base_currency: null };
 
   function fill(p) {
     p = { ...DEFAULTS, ...p };
@@ -169,6 +170,9 @@
     setRange("esg", { none: 0, some: 1, high: 2 }[p.esg_importance] || 0);
     setRange("crypto_max", Math.round(p.crypto_max * 100));
     setRange("max_single_weight", Math.round(p.max_single_weight * 100 / 5) * 5);
+    setRange("max_turnover", Math.round(p.max_turnover * 100 / 5) * 5);
+    boxes.protected_holdings && boxes.protected_holdings.set(p.protected_holdings);
+    $$("input[name=replacement_types]", form).forEach(input => { input.checked = (p.replacement_types || []).includes(input.value); });
     boxes.exclusions && boxes.exclusions.set(p.exclusions);
     boxes.avoid_countries && boxes.avoid_countries.set(p.avoid_countries);
     boxes.interests && boxes.interests.set(p.interests);

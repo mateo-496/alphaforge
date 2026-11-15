@@ -90,6 +90,9 @@ h1 { font: 400 40px/1.12 var(--serif); letter-spacing: -0.015em; margin: 0 0 16p
   font-size: 12px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.06em; color: var(--ink-2);
 }
 .field em { font-style: normal; font-size: 12px; color: var(--muted); }
+.replacement-group { border: 0; padding: 0; min-width: 0; }
+.replacement-types { display: flex; flex-wrap: wrap; gap: 12px 24px; }
+.replacement-types label { display: inline-flex; align-items: center; gap: 6px; }
 .field-row { display: grid; gap: 24px; }
 .field-row.two { grid-template-columns: 1fr 1fr; }
 .field-row.three { grid-template-columns: 1fr 1fr 1fr; }

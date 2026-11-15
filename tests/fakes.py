@@ -177,8 +177,9 @@ def fake_ask(agent, system, prompt, schema, **kw):
                + [{"country": facts[0]["country"], "note": "Debt will hit 300% next year."}] if facts else []}
     elif name == "Swaps":
         top, cands = facts["holdings"][0]["ticker"], facts["candidates"]
-        out = {"swaps": [{"sell": top, "buy": cands[-1]["ticker"], "fraction": .5, "rationale": "Cuts the largest contribution."},
-                         {"sell": "NOPE", "buy": cands[0]["ticker"], "fraction": .5, "rationale": "Invalid ticker."}]}
+        evidence = [item["id"] for item in facts.get("evidence", []) if item["ticker"] == top][:1]
+        out = {"swaps": [{"sell": top, "buy": cands[-1]["ticker"], "evidence_ids": evidence},
+                         {"sell": "NOPE", "buy": cands[0]["ticker"], "evidence_ids": []}]}
     else:
         raise ValueError(name)
     return schema.model_validate(out)

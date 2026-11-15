@@ -33,7 +33,7 @@ risk shown next to it; the same formula scores every holding and every country. 
 | 4. Macro & sources | **country risk agent** (World Bank + `tools/risk_calculator.py`), **source agent** | macro M_c per country; notes, official sources | A1 yes |
 | 5. Country risk | **geopolitical agent**, **geopolitical claims agent**, `tools/gpr.py` | g_c (code) + driver; verified claims on the GPR history | A2 yes |
 | 6. Portfolio risk | `web/scoring.py`; **risk agent** | concern, objective risk, verdict; summary with numbers checked | — |
-| 7. Recommendations | `web/recommend.py`; **remediation agent** | code swaps; agent alternatives, validated and re-scored | — |
+| 7. Recommendations | `web/recommend.py`; **remediation agent** | code swaps; agent alternatives use profile, risk and verified source context, then code sizes and re-scores them | — |
 
 Steps 2–4 run in parallel. Every agent fails independently; LLM text is never a number in the score, and numbers
 an LLM writes in prose are checked against the facts it was given (`agents/risk_agent.check`).

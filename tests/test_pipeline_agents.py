@@ -79,6 +79,7 @@ def test_agent_failures_never_break_the_report(env, monkeypatch):
     assert rec["status"] == "done" and r["summary_by"] == "code"
     assert all(c["driver"] for c in r["by_country"])   # factual fallback drivers
     assert r["agent_swaps"] is None
+    assert r["agent_status"] == "unavailable"
     assert r["macro"]["meta"]["error"] and "Central government debt" in r["macro"]["countries"]["USA"]["note"]
     assert all(g["error"] for g in r["gpr_claims"].values())
     assert r["firms"]["NVDA"]["risk_factors"]["status"] == "error"
@@ -93,6 +94,110 @@ def test_no_immediate_danger(env):
         assert r["verdict"]["status"] == "clear" and r["remediation"] == []
     else:   # only the market test can fail here
         assert r["verdict"]["status"] == "watch" and r["remediation"] == []
+
+
+def test_form_trade_preferences():
+    from starlette.datastructures import FormData
+    from web.app import build_request
+
+    form = FormData([("ticker", "NVDA"), ("amount", "100"), ("protected_holdings", "NVDA"),
+                     ("max_turnover", "10"), ("replacement_types", "etf_bond")])
+    request, errors, _ = build_request(form)
+    assert not errors
+    assert request.profile.protected_holdings == ["NVDA"]
+    assert request.profile.max_turnover == .1
+    assert request.profile.replacement_types == ["etf_bond"]
+
+    invalid = FormData([("ticker", "NVDA"), ("amount", "100"), ("protected_holdings", "SPY")])
+    request, errors, _ = build_request(invalid)
+    assert request is None and "Holdings to keep must be in the portfolio." in errors
+
+
+def test_pipeline_respects_trade_preferences(env):
+    rec = _run([{"ticker": "NVDA", "weight": .6}, {"ticker": "RY.TO", "weight": .4}],
+               protected_holdings=["NVDA"], max_turnover=.1, replacement_types=["etf_bond"])
+    assert rec["status"] == "done", rec["error"]
+    result = rec["result"]
+    assert result["style"]["prefer"] == ["etf_bond"]
+    assert sum(swap["move"] for swap in result["remediation"]) <= .1 + 1e-9
+    for swap in result["remediation"] + (result["agent_swaps"] or []):
+        assert swap["from"] != "NVDA"
+        assert swap["to"] in ("XBB.TO", "ZST.TO", "AGG", "BND", "TLT")
+        assert swap["move"] <= .1 + 1e-9
+
+
+def test_pipeline_sends_verified_reports_to_remediation(env, monkeypatch):
+    import json
+    from core import llm
+
+    captured = {}
+    original = llm.ask
+
+    def capture(agent, system, prompt, schema, **kwargs):
+        if agent == "remediation":
+            captured.update(json.loads(prompt))
+        return original(agent, system, prompt, schema, **kwargs)
+
+    monkeypatch.setattr(llm, "ask", capture)
+    rec = _run([{"ticker": "NVDA", "weight": .8}, {"ticker": "RY.TO", "weight": .2}],
+               protected_holdings=["RY.TO"], max_turnover=.2)
+    assert rec["status"] == "done" and rec["result"]["agent_status"] == "completed"
+    assert captured["profile"]["protected_holdings"] == ["RY.TO"]
+    assert captured["profile"]["max_turnover"] == .2
+    assert captured["score"] == pytest.approx(rec["result"]["objective"], abs=.1)
+    assert captured["countries"] and captured["holdings"][0]["exposure"]
+    assert all(candidate["exposure"] is not None for candidate in captured["candidates"])
+    assert all(candidate["exposure"].get("TWN", 0) < .05 for candidate in captured["candidates"])
+    assert any(item["kind"] == "Company filing" and item["ticker"] == "NVDA" for item in captured["evidence"])
+
+    from fastapi.testclient import TestClient
+    from web.app import app
+    source = next(item for item in captured["evidence"] if item["kind"] == "Company filing")
+    rec["result"]["agent_swaps"] = [{"from": "NVDA", "to": "AGG", "fraction": .25, "move": .2,
+                                      "score_before": 80, "score_after": 70, "rationale": "Illustrative trade.",
+                                      "evidence": [source]}]
+    response = TestClient(app).get(f"/runs/{rec['id']}/result")
+    assert response.status_code == 200
+    assert source["quote"] in response.text and source["url"] in response.text
+
+
+def test_pipeline_reports_remaining_conflicts_and_profile_preferences(env, monkeypatch):
+    from fastapi.testclient import TestClient
+    from agents import remediation_agent
+    from core.schemas import AnalysisRequest
+    from web.app import app, profile_checks
+    from web import recommend
+
+    req = AnalysisRequest(portfolio={"holdings": [{"ticker": "NVDA", "weight": .8},
+                                                   {"ticker": "SPY", "weight": .2}]},
+                          profile={"risk_level": 5, "max_single_weight": .4, "max_turnover": .2,
+                                   "protected_holdings": ["SPY"], "replacement_types": ["etf_bond"],
+                                   "avoid_countries": ["TWN"]}, as_of="2026-11-12")
+    rid = store.runs.create(req.model_dump() | {"checks": profile_checks(req)})
+    trade = {"from": "NVDA", "to": "AGG", "fraction": .25, "move": .2, "kind": "profile",
+             "score_before": 80, "score_after": 70, "why_sell": "Reduce the holding.", "why_buy": "Bond fund."}
+    alternative = {"from": "NVDA", "to": "AGG", "fraction": .125, "move": .1, "evidence": [],
+                   "score_before": 80, "score_after": 75, "rationale": "Alternative trade."}
+    monkeypatch.setattr(recommend, "propose", lambda *args, **kwargs: [dict(trade)])
+    monkeypatch.setattr(remediation_agent, "propose", lambda *args, **kwargs: [dict(alternative)])
+    asyncio.run(pipeline.run(rid))
+    rec = store.runs.get(rid)
+    assert rec["status"] == "done", rec["error"]
+    result = rec["result"]
+    assert {item["id"] for item in result["profile_outcome"]["remaining"]} >= {"single:NVDA", "country:TWN"}
+    assert "20.0% of the 20.0% limit" in result["remediation"][0]["profile_notes"][0]
+    assert "10.0% of the 20.0% limit" in result["agent_swaps"][0]["profile_notes"][0]
+    assert any("70%" in item["text"] for item in result["agent_swaps"][0]["conflict_changes"])
+    response = TestClient(app).get(f"/runs/{rid}/result")
+    assert response.status_code == 200
+    assert "Still unresolved after proposed changes" in response.text
+    assert "Holdings kept: SPY" in response.text
+    assert "selected replacement types" in response.text
+    result["checks"] = []
+    result["profile_outcome"]["new"] = [{"id": "volatility:AGG", "ticker": "AGG", "text": "AGG exceeds volatility limit."}]
+    response = TestClient(app).get(f"/runs/{rid}/result")
+    assert "New conflicts after the proposed changes" in response.text
+    assert "AGG exceeds volatility limit." in response.text
 
 
 def test_every_split_is_tagged_with_its_tier(env):
